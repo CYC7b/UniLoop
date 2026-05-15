@@ -1,0 +1,30 @@
+{
+    "name": "UniLoop",
+    "short_name": "UniLoop",
+    "description": "Campus second-hand marketplace for university students — 校园二手交易平台",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#FAF8F4",
+    "theme_color": "#C07040",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "/icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "shopping",
+        "education"
+    ],
+    "lang": "en",
+    "dir": "ltr"
+}
