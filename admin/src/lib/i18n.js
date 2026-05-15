@@ -1,0 +1,142 @@
+export const translations = {
+  zh: {
+    // Layout
+    subtitle: '管理控制台',
+    nav: { dashboard: '仪表盘', users: '用户管理', products: '商品管理', reports: '举报管理' },
+    logout: '退出登录',
+
+    // Login
+    loginTitle: '登录管理控制台',
+    email: '邮箱',
+    password: '密码',
+    signIn: '登录',
+    accessDenied: '权限不足：需要管理员权限',
+
+    // Dashboard
+    dashboardTitle: '仪表盘',
+    dashboardDesc: '平台概览与统计',
+    stats: {
+      total_users: '总用户数',
+      total_products: '总商品数',
+      active_products: '在售商品',
+      total_conversations: '会话数',
+      pending_reports: '待处理举报',
+      pending_verifications: '待审核认证',
+    },
+
+    // Users
+    usersTitle: '用户管理',
+    totalUsers: '位用户',
+    searchUsers: '搜索用户名或邮箱...',
+    allStatus: '全部状态',
+    thUser: '用户',
+    thEmail: '邮箱',
+    thSchool: '学校',
+    thVerification: '认证状态',
+    thProducts: '商品数',
+    thJoined: '注册时间',
+    thActions: '操作',
+    loading: '加载中...',
+    noUsers: '未找到用户',
+    confirmVerify: (s) => `确认将认证状态设为"${s}"？`,
+    confirmDeleteUser: '确认永久删除该用户及其所有数据？',
+
+    // Products
+    productsTitle: '商品管理',
+    totalProducts: '件商品',
+    searchProducts: '搜索标题、描述或卖家邮箱...',
+    thProduct: '商品',
+    thPrice: '价格',
+    thCategory: '分类',
+    thSeller: '卖家',
+    thStatus: '状态',
+    thCreated: '创建时间',
+    noProducts: '未找到商品',
+    confirmStatus: (s) => `确认将商品状态设为"${s}"？`,
+    confirmDeleteProduct: '确认永久删除该商品？',
+
+    // Reports
+    reportsTitle: '举报管理',
+    totalReports: '条举报',
+    all: '全部',
+    pending: '待处理',
+    resolved: '已处理',
+    thReporter: '举报人',
+    thType: '类型',
+    thTargetId: '目标ID',
+    thReason: '原因',
+    thDate: '日期',
+    noReports: '未找到举报',
+    confirmDeleteReport: '确认删除该举报？',
+
+    // Pagination
+    pageOf: (p, t) => `第 ${p} / ${t} 页`,
+  },
+
+  en: {
+    subtitle: 'Management Console',
+    nav: { dashboard: 'Dashboard', users: 'Users', products: 'Products', reports: 'Reports' },
+    logout: 'Logout',
+
+    loginTitle: 'Sign in to management console',
+    email: 'Email',
+    password: 'Password',
+    signIn: 'Sign In',
+    accessDenied: 'Access denied: admin privileges required',
+
+    dashboardTitle: 'Dashboard',
+    dashboardDesc: 'Platform overview and statistics',
+    stats: {
+      total_users: 'Total Users',
+      total_products: 'Total Products',
+      active_products: 'Active Products',
+      total_conversations: 'Conversations',
+      pending_reports: 'Pending Reports',
+      pending_verifications: 'Pending Verifications',
+    },
+
+    usersTitle: 'Users',
+    totalUsers: 'total users',
+    searchUsers: 'Search by name or email...',
+    allStatus: 'All Status',
+    thUser: 'User',
+    thEmail: 'Email',
+    thSchool: 'School',
+    thVerification: 'Verification',
+    thProducts: 'Products',
+    thJoined: 'Joined',
+    thActions: 'Actions',
+    loading: 'Loading...',
+    noUsers: 'No users found',
+    confirmVerify: (s) => `Set verification to "${s}"?`,
+    confirmDeleteUser: 'Permanently delete this user and all their data?',
+
+    productsTitle: 'Products',
+    totalProducts: 'total products',
+    searchProducts: 'Search by title, description or seller email...',
+    thProduct: 'Product',
+    thPrice: 'Price',
+    thCategory: 'Category',
+    thSeller: 'Seller',
+    thStatus: 'Status',
+    thCreated: 'Created',
+    noProducts: 'No products found',
+    confirmStatus: (s) => `Set product status to "${s}"?`,
+    confirmDeleteProduct: 'Permanently delete this product?',
+
+    reportsTitle: 'Reports',
+    totalReports: 'reports',
+    all: 'All',
+    pending: 'Pending',
+    resolved: 'Resolved',
+    thReporter: 'Reporter',
+    thType: 'Type',
+    thTargetId: 'Target ID',
+    thReason: 'Reason',
+    thDate: 'Date',
+    noReports: 'No reports found',
+    confirmDeleteReport: 'Delete this report?',
+
+    pageOf: (p, t) => `Page ${p} of ${t}`,
+  }
+}

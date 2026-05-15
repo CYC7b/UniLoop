@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --grain-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: Georgia, ui-serif, 'Palatino Linotype', 'Times New Roman', serif;
+  background-color: #FAF9F7;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Serif headings — the "retro" pillar */
+h1, h2, h3, .font-serif {
+  font-family: Georgia, ui-serif, 'Palatino Linotype', 'Times New Roman', serif;
+}
+
+/* Global grain texture overlay (parchment effect) */
+.grain-overlay::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--grain-url);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  opacity: 0.38;
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: multiply;
+}
+
+/* Card — warm glass */
+.card-retro {
+  background: rgba(253, 252, 250, 0.92);
+  border: 1px solid rgba(195, 162, 90, 0.28);
+  box-shadow: 0 4px 24px rgba(100, 50, 25, 0.07);
+  backdrop-filter: blur(12px);
+}
+
+/* Gold glow on active / focus */
+.glow-gold {
+  box-shadow: 0 0 0 3px rgba(160, 120, 40, 0.18), 0 6px 24px rgba(160, 120, 40, 0.28);
+}
+
+/* Fix Leaflet broken by Tailwind preflight */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane,
+.leaflet-shadow-pane,
+.leaflet-marker-pane,
+.leaflet-tooltip-pane,
+.leaflet-popup-pane {
+  z-index: auto;
+}
+
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+  height: auto;
+}
+
+.leaflet-container {
+  -webkit-tap-highlight-color: transparent;
+  font: inherit;
+}
+
+.leaflet-tile-pane      { z-index: 200; }
+.leaflet-overlay-pane   { z-index: 400; }
+.leaflet-shadow-pane    { z-index: 500; }
+.leaflet-marker-pane    { z-index: 600; }
+.leaflet-tooltip-pane   { z-index: 650; }
+.leaflet-popup-pane     { z-index: 700; }
+.leaflet-control        { z-index: 800; }
+.leaflet-top,
+.leaflet-bottom         { z-index: 1000; }
+
+/* Hide scrollbar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes categorySlideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-8px) scaleX(0.96);
+    transform-origin: left center;
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scaleX(1);
+    transform-origin: left center;
+  }
+}

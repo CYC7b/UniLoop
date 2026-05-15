@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.*.example
+.dev.vars
+
+# Local tool state
+.claude/
+.wrangler/
+
+# Local project notes and internal docs
+docs/
+
+# Keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+
+# Build output
+dist/
+admin/dist/
+backend/bin/
+backend/uploads/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
