@@ -1,7 +1,9 @@
 package product
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -17,6 +19,13 @@ import (
 
 var allowedImageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true,
+}
+
+var allowedImageContentTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
 }
 
 const maxUploadSize = 10 << 20 // 10 MB per file
@@ -95,6 +104,13 @@ func (h *Handler) GetOne(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
+	}
+	if p.Status != "active" {
+		userID, hasUser := middleware.GetOptionalUserID(c)
+		if !hasUser || (p.OwnerID != userID && !middleware.GetIsAdmin(c)) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "product not found"})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, p)
 }
@@ -207,6 +223,13 @@ func (h *Handler) UploadImages(c *gin.Context) {
 		if fh.Size > maxUploadSize {
 			return "", fmt.Errorf("each file must be under 10MB")
 		}
+		ok, contentType, err := isAllowedImageContent(fh)
+		if err != nil {
+			return "", fmt.Errorf("invalid image file")
+		}
+		if !ok {
+			return "", fmt.Errorf("image content is not supported: %s", contentType)
+		}
 		name := uuid.New().String() + ext
 		return h.storage.Save(c.Request.Context(), fh, dir, name)
 	}
@@ -232,4 +255,28 @@ func (h *Handler) UploadImages(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"urls": urls, "thumbnails": thumbUrls})
+}
+
+func isAllowedImageContent(file *multipart.FileHeader) (bool, string, error) {
+	src, err := file.Open()
+	if err != nil {
+		return false, "", err
+	}
+	defer src.Close()
+
+	header := make([]byte, 512)
+	n, err := src.Read(header)
+	if err != nil && err != io.EOF {
+		return false, "", err
+	}
+
+	contentType := detectImageContentType(header[:n])
+	return allowedImageContentTypes[contentType], contentType, nil
+}
+
+func detectImageContentType(header []byte) string {
+	if len(header) >= 12 && bytes.Equal(header[:4], []byte("RIFF")) && bytes.Equal(header[8:12], []byte("WEBP")) {
+		return "image/webp"
+	}
+	return http.DetectContentType(header)
 }

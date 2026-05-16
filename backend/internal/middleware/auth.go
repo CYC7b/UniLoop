@@ -83,13 +83,35 @@ func OptionalAuth(jwtSecret string) gin.HandlerFunc {
 		}
 		claims := &Claims{}
 		token, err := jwt.ParseWithClaims(parts[1], claims, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, jwt.ErrSignatureInvalid
+			}
 			return []byte(jwtSecret), nil
 		})
 		if err == nil && token.Valid {
 			c.Set(UserIDKey, claims.UserID)
+			c.Set(IsAdminKey, claims.IsAdmin)
 		}
 		c.Next()
 	}
+}
+
+func GetOptionalUserID(c *gin.Context) (uuid.UUID, bool) {
+	v, ok := c.Get(UserIDKey)
+	if !ok {
+		return uuid.Nil, false
+	}
+	id, ok := v.(uuid.UUID)
+	return id, ok
+}
+
+func GetIsAdmin(c *gin.Context) bool {
+	v, ok := c.Get(IsAdminKey)
+	if !ok {
+		return false
+	}
+	isAdmin, ok := v.(bool)
+	return ok && isAdmin
 }
 
 // GetUserID extracts the authenticated user ID from context. Panics if not set.
