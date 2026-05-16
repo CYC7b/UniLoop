@@ -30,15 +30,24 @@ const Home = () => {
   const [term, setTerm] = useState('')
   const [activeTab, setActiveTab] = useState('buy') // 'buy' | 'rent'
   const [activeCat, setActiveCat] = useState('All')
-  const [activeLoc, setActiveLoc] = useState('All Locations')
+  const [activeLocByTab, setActiveLocByTab] = useState({
+    buy: 'All Locations',
+    rent: 'All Locations'
+  })
+  const activeLoc = activeLocByTab[activeTab] || 'All Locations'
   const [distance, setDistance] = useState('Any')
   const [toast, setToast] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
+  const setActiveLocForActiveTab = (loc) => {
+    setActiveLocByTab(prev => (
+      prev[activeTab] === loc ? prev : { ...prev, [activeTab]: loc }
+    ))
+  }
+
   const handleTabSwitch = (tab) => {
     setActiveTab(tab)
     setActiveCat(tab === 'rent' ? 'Rentals' : 'All')
-    setActiveLoc('All Locations')
     setAppliedTerm('')
     setTerm('')
     setPage(1)
@@ -91,7 +100,7 @@ const Home = () => {
       const q = term.trim()
 
       if (!q) {
-        setActiveLoc('All Locations')
+        setActiveLocForActiveTab('All Locations')
         setRefreshKey(k => k + 1)
         return
       }
@@ -146,7 +155,7 @@ const Home = () => {
         const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(escapeRegExp(matchedAlias), 'i');
         processedTerm = processedTerm.replace(regex, '').trim();
-        setActiveLoc(foundOfficialLoc);
+        setActiveLocForActiveTab(foundOfficialLoc);
       }
 
       saveSearchTerm(q)
@@ -283,13 +292,13 @@ const Home = () => {
           <input
             type="text"
             value={term}
-            onChange={e => { const val = e.target.value; setTerm(val); if (val.trim() === '') { setAppliedTerm(''); setActiveLoc('All Locations') } }}
+            onChange={e => { const val = e.target.value; setTerm(val); if (val.trim() === '') { setAppliedTerm(''); setActiveLocForActiveTab('All Locations') } }}
             onKeyDown={handleSearch}
             placeholder={language === 'zh' ? '搜索商品 / 地点 / 用户' : 'Search items, location or user'}
             className="bg-transparent border-none outline-none text-uniloop-900 placeholder-uniloop-400/40 text-[13px] w-full pr-6 font-medium"
           />
           {term && (
-            <button onClick={() => { setTerm(''); setAppliedTerm(''); setActiveLoc('All Locations') }} className="absolute right-3 p-1 text-uniloop-400/50 hover:text-uniloop-600 transition-colors">
+            <button onClick={() => { setTerm(''); setAppliedTerm(''); setActiveLocForActiveTab('All Locations') }} className="absolute right-3 p-1 text-uniloop-400/50 hover:text-uniloop-600 transition-colors">
               <X size={14} />
             </button>
           )}
@@ -324,7 +333,7 @@ const Home = () => {
                   <button
                     key={loc}
                     onClick={() => {
-                      setActiveLoc(loc)
+                      setActiveLocForActiveTab(loc)
                       setIsSidebarOpen(false)
                     }}
                     className={`flex items-center gap-4 w-full p-3 rounded-2xl transition-all active:scale-95 ${isSelected ? 'bg-uniloop-50 text-uniloop-700 shadow-sm border border-uniloop-100/50' : 'hover:bg-slate-50 text-slate-600 border border-transparent'}`}
