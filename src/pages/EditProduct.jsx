@@ -52,6 +52,7 @@ const EditProduct = () => {
             setWechat(item.wechat || '')
             setInstagram(item.instagram || '')
             setCategory(item.category || '')
+            setCurrency(item.currency || 'MYR')
             setTagsInput((item.tags || []).join(' '))
             setLocationName(item.locationName || '')
             if (item.lat && item.lng) setLatlng({ lat: item.lat, lng: item.lng })

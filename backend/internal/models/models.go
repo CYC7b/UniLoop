@@ -159,7 +159,6 @@ type UpdateProductRequest struct {
 	Lat          *float64     `json:"lat"`
 	Lng          *float64     `json:"lng"`
 	ContactInfo  *ContactInfo `json:"contact_info"`
-	Status       *string      `json:"status"`
 }
 
 type CreateConversationRequest struct {

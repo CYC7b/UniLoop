@@ -10,22 +10,31 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// In production, restrict to your domain.
-		return true
-	},
-}
-
 type WSHandler struct {
-	hub       *Hub
-	jwtSecret string
+	hub             *Hub
+	jwtSecret       string
+	allowedOrigins  map[string]struct{}
+	allowAllOrigins bool
 }
 
-func NewWSHandler(hub *Hub, jwtSecret string) *WSHandler {
-	return &WSHandler{hub: hub, jwtSecret: jwtSecret}
+func NewWSHandler(hub *Hub, jwtSecret string, allowedOrigins []string) *WSHandler {
+	h := &WSHandler{
+		hub:            hub,
+		jwtSecret:      jwtSecret,
+		allowedOrigins: make(map[string]struct{}, len(allowedOrigins)),
+	}
+	for _, origin := range allowedOrigins {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			h.allowAllOrigins = true
+			continue
+		}
+		h.allowedOrigins[origin] = struct{}{}
+	}
+	return h
 }
 
 // ServeWS upgrades the connection and registers the client.
@@ -47,12 +56,29 @@ func (h *WSHandler) ServeWS(c *gin.Context) {
 		responseHeader.Set("Sec-WebSocket-Protocol", protocol)
 	}
 
+	upgrader := websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     h.checkOrigin,
+	}
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, responseHeader)
 	if err != nil {
 		return
 	}
 
 	h.hub.newClient(conn, userID)
+}
+
+func (h *WSHandler) checkOrigin(r *http.Request) bool {
+	origin := strings.TrimRight(strings.TrimSpace(r.Header.Get("Origin")), "/")
+	if origin == "" {
+		return true
+	}
+	if h.allowAllOrigins {
+		return true
+	}
+	_, ok := h.allowedOrigins[origin]
+	return ok
 }
 
 func tokenFromRequest(r *http.Request) (string, string) {

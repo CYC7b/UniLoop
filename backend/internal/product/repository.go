@@ -248,9 +248,6 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req models.Update
 	if req.Lng != nil {
 		field("lng", *req.Lng)
 	}
-	if req.Status != nil {
-		field("status", *req.Status)
-	}
 	if req.ContactInfo != nil {
 		field("contact_info", contactToMap(*req.ContactInfo))
 	}

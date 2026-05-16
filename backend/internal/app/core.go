@@ -99,7 +99,7 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	favHandler := favorite.NewHandler(favService)
 	reportService := report.NewService(report.NewRepository(pool), pub, cfg.AdminEmail)
 	reportHandler := report.NewHandler(reportService)
-	wsHandler := ws.NewWSHandler(hub, cfg.JWTSecret)
+	wsHandler := ws.NewWSHandler(hub, cfg.JWTSecret, cfg.AllowedOrigins)
 	adminHandler := admin.NewHandler(admin.NewRepository(pool, cacheClient))
 
 	router := newBaseRouter(cfg)
@@ -154,7 +154,7 @@ func registerCoreRoutes(
 	{
 		p.GET("", productHandler.List)
 		p.GET("/locations", productHandler.Locations)
-		p.GET("/:id", productHandler.GetOne)
+		p.GET("/:id", middleware.OptionalAuth(cfg.JWTSecret), productHandler.GetOne)
 		authed := p.Group("", middleware.Auth(cfg.JWTSecret))
 		authed.POST("", productHandler.Create)
 		authed.PUT("/:id", productHandler.Update)
