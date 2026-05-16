@@ -17,15 +17,20 @@ export const ProductProvider = ({ children }) => {
   const [loading, setLoading] = useState({ products: true, profile: false })
   const fetchRequestRef = useRef(0)
 
-  const fetchLocations = useCallback(async () => {
+  const fetchLocations = useCallback(async (params = {}) => {
     try {
-      const res = await productService.listLocations()
+      const res = await productService.listLocations(params)
       if (res.locations) {
-        setLocations(['All Locations', ...res.locations])
+        const nextLocations = ['All Locations', ...res.locations]
+        if (!params.categoryFilter && !params.excludeCategories?.length) {
+          setLocations(nextLocations)
+        }
+        return nextLocations
       }
     } catch (err) {
       console.warn('fetchLocations failed:', err)
     }
+    return ['All Locations']
   }, [])
 
   const fetchProducts = useCallback(async (currentUserId = null, params = {}) => {

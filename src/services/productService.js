@@ -61,7 +61,16 @@ export async function listProducts({
 }
 
 export const getProduct = (id) => api.get(`/api/products/${id}`)
-export const listLocations = () => api.get('/api/products/locations')
+export function listLocations({
+  categoryFilter = 'All',
+  excludeCategories = []
+} = {}) {
+  const params = new URLSearchParams()
+  if (categoryFilter && categoryFilter !== 'All') params.set('category', categoryFilter)
+  if (excludeCategories.length > 0) params.set('exclude_categories', excludeCategories.join(','))
+  const query = params.toString()
+  return api.get(`/api/products/locations${query ? `?${query}` : ''}`)
+}
 export const deleteProduct = (id) => api.del(`/api/products/${id}`)
 
 export function uploadProductImages(images, thumbnails = []) {

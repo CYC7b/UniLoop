@@ -23,7 +23,7 @@ const MAX_HISTORY = 8
 
 const Home = () => {
   const { session } = useAuth()
-  const { listings, locations, favorites, toggleFavorite, loading, fetchProducts } = useProducts()
+  const { listings, favorites, toggleFavorite, loading, fetchLocations, fetchProducts } = useProducts()
   const { categories, language, translations, setUserLocation, userLocation } = useUI()
   const t = translations[language]
   const navigate = useNavigate()
@@ -34,7 +34,12 @@ const Home = () => {
     buy: 'All Locations',
     rent: 'All Locations'
   })
+  const [locationOptionsByTab, setLocationOptionsByTab] = useState({
+    buy: ['All Locations'],
+    rent: ['All Locations']
+  })
   const activeLoc = activeLocByTab[activeTab] || 'All Locations'
+  const locationOptions = locationOptionsByTab[activeTab] || ['All Locations']
   const [distance, setDistance] = useState('Any')
   const [toast, setToast] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -79,6 +84,23 @@ const Home = () => {
     localStorage.removeItem(SEARCH_HISTORY_KEY)
   }
 
+  useEffect(() => {
+    let mounted = true
+    const params = activeTab === 'rent'
+      ? { categoryFilter: 'Rentals' }
+      : { excludeCategories: ['Rentals'] }
+
+    fetchLocations(params).then(nextLocations => {
+      if (!mounted) return
+      setLocationOptionsByTab(prev => ({
+        ...prev,
+        [activeTab]: nextLocations
+      }))
+    })
+
+    return () => { mounted = false }
+  }, [activeTab, fetchLocations])
+
   // 热门标签
   const hotTags = useMemo(() => {
     const tagCount = {}
@@ -117,8 +139,8 @@ const Home = () => {
       let foundOfficialLoc = null;
       let matchedAlias = null;
 
-      // 1. 首先尝试全称匹配（locations 列表中的完整名称）
-      const exactLoc = locations.find(loc => loc !== 'All Locations' && lowerQ.includes(loc.toLowerCase()));
+      // 1. 首先尝试全称匹配（当前 tab 地点列表中的完整名称）
+      const exactLoc = locationOptions.find(loc => loc !== 'All Locations' && lowerQ.includes(loc.toLowerCase()));
       if (exactLoc) {
         foundOfficialLoc = exactLoc;
         matchedAlias = exactLoc;
@@ -126,7 +148,7 @@ const Home = () => {
         // 2. 使用 LOCATION_ALIASES 硬编码别名
         for (const [alias, officialStr] of Object.entries(LOCATION_ALIASES)) {
           if (lowerQ.includes(alias)) {
-            if (locations.includes(officialStr)) {
+            if (locationOptions.includes(officialStr)) {
               foundOfficialLoc = officialStr;
               matchedAlias = alias;
               break;
@@ -135,10 +157,10 @@ const Home = () => {
         }
       }
 
-      // 3. 别名未命中时，对 locations 列表做 token 模糊匹配（仅匹配 4+ 字符的词）
+      // 3. 别名未命中时，对当前 tab 地点列表做 token 模糊匹配（仅匹配 4+ 字符的词）
       if (!foundOfficialLoc) {
         const queryTokens = lowerQ.split(/[\s,&+]+/).filter(t => t.length >= 4);
-        for (const loc of locations) {
+        for (const loc of locationOptions) {
           if (loc === 'All Locations') continue;
           const locTokens = loc.toLowerCase().split(/[\s,&+]+/).filter(t => t.length >= 4);
           const hit = locTokens.find(lt => queryTokens.some(qt => lt.startsWith(qt) || qt.startsWith(lt)));
@@ -327,7 +349,7 @@ const Home = () => {
           </div>
           <div className="p-4 flex-1 overflow-y-auto">
             <div className="flex flex-col gap-2">
-              {locations.map((loc) => {
+              {locationOptions.map((loc) => {
                 const isSelected = activeLoc === loc
                 return (
                   <button

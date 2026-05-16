@@ -69,7 +69,7 @@ func (r *Repository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	r.cache.Delete(ctx, cache.ProfileKey(id))
 	r.cache.Delete(ctx, unreadKeys...)
 	r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
-	r.cache.Delete(ctx, cache.LocationsKey)
+	r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	return nil
 }
 
@@ -78,7 +78,7 @@ func (r *Repository) UpdateProductStatus(ctx context.Context, id uuid.UUID, stat
 		`UPDATE products SET status=$1, updated_at=NOW() WHERE id=$2`, status, id)
 	if err == nil {
 		r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
-		r.cache.Delete(ctx, cache.LocationsKey)
+		r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	}
 	return err
 }
@@ -87,7 +87,7 @@ func (r *Repository) DeleteProduct(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM products WHERE id=$1`, id)
 	if err == nil {
 		r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
-		r.cache.Delete(ctx, cache.LocationsKey)
+		r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	}
 	return err
 }

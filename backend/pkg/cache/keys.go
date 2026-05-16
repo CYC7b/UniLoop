@@ -4,6 +4,7 @@ import "github.com/google/uuid"
 
 const (
 	LocationsKey       = "locations"
+	LocationsPattern   = "locations*"
 	ProductListPattern = "products:*"
 )
 

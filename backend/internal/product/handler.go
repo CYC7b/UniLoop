@@ -176,7 +176,11 @@ func (h *Handler) Delete(c *gin.Context) {
 
 // Locations returns distinct location names from active products.
 func (h *Handler) Locations(c *gin.Context) {
-	locs, err := h.repo.ListLocations(c.Request.Context())
+	p := LocationParams{
+		Category:          c.Query("category"),
+		ExcludeCategories: splitCSV(c.Query("exclude_categories")),
+	}
+	locs, err := h.repo.ListLocations(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
