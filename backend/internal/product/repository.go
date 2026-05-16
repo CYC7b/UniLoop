@@ -39,6 +39,11 @@ type ListParams struct {
 	MaxDist           *float64 // km
 }
 
+type LocationParams struct {
+	Category          string
+	ExcludeCategories []string
+}
+
 // listCacheKey returns a deterministic key for the given params.
 // Geo-filtered queries are not cached (infinite lat/lng combinations).
 func listCacheKey(p ListParams) (string, bool) {
@@ -49,6 +54,15 @@ func listCacheKey(p ListParams) (string, bool) {
 		p.Category, strings.Join(p.ExcludeCategories, ","), p.Location, p.Search, p.Page, p.Limit)
 	h := md5.Sum([]byte(raw))
 	return fmt.Sprintf("products:%x", h), true
+}
+
+func locationsCacheKey(p LocationParams) string {
+	if p.Category == "" && len(p.ExcludeCategories) == 0 {
+		return cache.LocationsKey
+	}
+	raw := fmt.Sprintf("cat=%s:exclude=%s", p.Category, strings.Join(p.ExcludeCategories, ","))
+	h := md5.Sum([]byte(raw))
+	return fmt.Sprintf("locations:%x", h)
 }
 
 func (r *Repository) List(ctx context.Context, p ListParams) ([]models.Product, error) {
@@ -200,7 +214,7 @@ func (r *Repository) Create(ctx context.Context, req models.CreateProductRequest
 	}
 	// Invalidate product list and locations caches
 	r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
-	r.cache.Delete(ctx, cache.LocationsKey)
+	r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	return r.GetByID(ctx, id)
 }
 
@@ -264,6 +278,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req models.Update
 		return nil, err
 	}
 	r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
+	r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	return r.GetByID(ctx, id)
 }
 
@@ -271,7 +286,7 @@ func (r *Repository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `DELETE FROM products WHERE id = $1`, id)
 	if err == nil {
 		r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
-		r.cache.Delete(ctx, cache.LocationsKey)
+		r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
 	}
 	return err
 }
@@ -330,19 +345,40 @@ func (r *Repository) GetFavorited(ctx context.Context, userID uuid.UUID) ([]mode
 	return results, rows.Err()
 }
 
-func (r *Repository) ListLocations(ctx context.Context) ([]string, error) {
+func (r *Repository) ListLocations(ctx context.Context, p LocationParams) ([]string, error) {
 	// Cache-Aside for locations (changes rarely)
+	cacheKey := locationsCacheKey(p)
 	var cached []string
-	if r.cache.GetJSON(ctx, cache.LocationsKey, &cached) {
+	if r.cache.GetJSON(ctx, cacheKey, &cached) {
 		return cached, nil
 	}
 
-	rows, err := r.db.Query(ctx, `
+	where := []string{"status = 'active'", "location_name IS NOT NULL", "location_name <> ''"}
+	args := []any{}
+	n := 1
+
+	if p.Category != "" && p.Category != "All" {
+		where = append(where, fmt.Sprintf("category = $%d", n))
+		args = append(args, p.Category)
+		n++
+	}
+	for _, category := range p.ExcludeCategories {
+		category = strings.TrimSpace(category)
+		if category == "" {
+			continue
+		}
+		where = append(where, fmt.Sprintf("category <> $%d", n))
+		args = append(args, category)
+		n++
+	}
+
+	query := fmt.Sprintf(`
 		SELECT TRIM(SPLIT_PART(location_name, ',', 1)) AS short_name
 		FROM products
-		WHERE status = 'active' AND location_name IS NOT NULL AND location_name <> ''
+		WHERE %s
 		GROUP BY short_name
-		ORDER BY COUNT(*) DESC`)
+		ORDER BY COUNT(*) DESC`, strings.Join(where, " AND "))
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +394,7 @@ func (r *Repository) ListLocations(ctx context.Context) ([]string, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	r.cache.SetJSON(ctx, cache.LocationsKey, locs, locationsTTL)
+	r.cache.SetJSON(ctx, cacheKey, locs, locationsTTL)
 	return locs, nil
 }
 
