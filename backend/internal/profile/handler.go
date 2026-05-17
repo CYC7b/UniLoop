@@ -148,12 +148,13 @@ func (h *Handler) SubmitVerifyDoc(c *gin.Context) {
 	}
 
 	name := userID.String() + "_doc" + ext
-	if _, err := h.storage.Save(c.Request.Context(), fh, "docs", name); err != nil {
+	url, err := h.storage.Save(c.Request.Context(), fh, "docs", name)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "write file"})
 		return
 	}
 
-	if err := h.repo.SetVerificationStatus(c.Request.Context(), userID, "pending"); err != nil {
+	if err := h.repo.SetVerificationDoc(c.Request.Context(), userID, url); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -17,6 +17,7 @@ func EnsureSchema(db *pgxpool.Pool) {
 		`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved BOOLEAN DEFAULT FALSE`,
 		`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
 		`ALTER TABLE products ADD COLUMN IF NOT EXISTS thumbnails TEXT[] DEFAULT '{}'`,
+		`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS verification_doc_url TEXT DEFAULT ''`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(ctx, stmt); err != nil {

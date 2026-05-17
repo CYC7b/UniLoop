@@ -1,4 +1,6 @@
-import { api } from '../lib/api'
+import { api, clearToken, getToken } from '../lib/api'
+
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 export const loginAdmin = async (email, password) => {
   const res = await fetch('/api/auth/login', {
@@ -28,3 +30,44 @@ export const deleteReport = (id) => api.del(`/api/admin/reports/${id}`)
 export const listUsers = (params) => api.get(`/api/admin/users?${params}`)
 export const updateUserVerification = (id, status) => api.put(`/api/admin/users/${id}/verification`, { status })
 export const deleteUser = (id) => api.del(`/api/admin/users/${id}`)
+
+export const listUserVerificationDocs = async (id) => {
+  const headers = {}
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`${API_URL}/api/admin/users/${id}/verify-doc?list=1`, { headers })
+  if (res.status === 401 || res.status === 403) {
+    clearToken()
+    window.location.reload()
+    return null
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    const err = new Error(data?.error || `Request failed (${res.status})`)
+    err.status = res.status
+    throw err
+  }
+  return res.json()
+}
+
+export const getUserVerificationDoc = async (id, fileName) => {
+  const headers = {}
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const query = fileName ? `?file=${encodeURIComponent(fileName)}` : ''
+  const res = await fetch(`${API_URL}/api/admin/users/${id}/verify-doc${query}`, { headers })
+  if (res.status === 401 || res.status === 403) {
+    clearToken()
+    window.location.reload()
+    return null
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    const err = new Error(data?.error || `Request failed (${res.status})`)
+    err.status = res.status
+    throw err
+  }
+  return res.blob()
+}

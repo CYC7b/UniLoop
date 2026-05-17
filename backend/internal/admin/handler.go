@@ -2,7 +2,13 @@ package admin
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -15,10 +21,12 @@ import (
 type Handler struct {
 	db   *pgxpool.Pool
 	repo *Repository
+	// uploadRoot is the absolute path where uploads are stored (e.g. /app/uploads).
+	uploadRoot string
 }
 
-func NewHandler(repo *Repository) *Handler {
-	return &Handler{db: repo.db, repo: repo}
+func NewHandler(repo *Repository, uploadRoot string) *Handler {
+	return &Handler{db: repo.db, repo: repo, uploadRoot: uploadRoot}
 }
 
 // Stats returns dashboard statistics.
@@ -65,7 +73,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	args = append(args, limit, offset)
 	query := fmt.Sprintf(`
 		SELECT p.id, p.email, p.full_name, p.school, p.avatar_url,
-		       p.verification_status, p.created_at, COALESCE(u.is_admin, FALSE),
+		       p.verification_status, COALESCE(p.verification_doc_url, ''),
+		       p.created_at, COALESCE(u.is_admin, FALSE),
 		       (SELECT COUNT(*) FROM products WHERE owner_id = p.id)
 		FROM profiles p
 		JOIN users u ON u.id = p.id
@@ -87,6 +96,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		School             string    `json:"school"`
 		AvatarURL          string    `json:"avatar_url"`
 		VerificationStatus string    `json:"verification_status"`
+		VerificationDocURL string    `json:"verification_doc_url"`
 		CreatedAt          time.Time `json:"created_at"`
 		IsAdmin            bool      `json:"is_admin"`
 		ProductCount       int       `json:"product_count"`
@@ -96,7 +106,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	for rows.Next() {
 		var u userRow
 		if err := rows.Scan(&u.ID, &u.Email, &u.FullName, &u.School, &u.AvatarURL,
-			&u.VerificationStatus, &u.CreatedAt, &u.IsAdmin, &u.ProductCount); err != nil {
+			&u.VerificationStatus, &u.VerificationDocURL, &u.CreatedAt, &u.IsAdmin, &u.ProductCount); err != nil {
 			continue
 		}
 		users = append(users, u)
@@ -147,6 +157,147 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// GetVerificationDoc streams the user's verification document to admins.
+func (h *Handler) GetVerificationDoc(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if c.Query("list") == "1" {
+		docs, listErr := listVerificationDocs(h.uploadRoot, id.String())
+		if listErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "document not found"})
+			return
+		}
+		primary := ""
+		if docURL, urlErr := h.repo.GetVerificationDocURL(ctx, id); urlErr == nil && docURL != "" {
+			if _, name, resolveErr := resolveDocPath(h.uploadRoot, docURL); resolveErr == nil {
+				primary = name
+			}
+		}
+		if primary == "" && len(docs) > 0 {
+			primary = docs[0].Name
+		}
+		c.JSON(http.StatusOK, gin.H{"docs": docs, "primary": primary})
+		return
+	}
+
+	if fileParam := strings.TrimSpace(c.Query("file")); fileParam != "" {
+		fileName := path.Base(fileParam)
+		if !strings.HasPrefix(fileName, id.String()+"_doc.") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+		filePath := filepath.Join(h.uploadRoot, "docs", fileName)
+		if stat, statErr := os.Stat(filePath); statErr != nil || stat.IsDir() {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", fileName))
+		c.Header("Cache-Control", "private, no-store")
+		c.File(filePath)
+		return
+	}
+
+	docURL, err := h.repo.GetVerificationDocURL(ctx, id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+		return
+	}
+
+	var filePath, filename string
+	if docURL != "" {
+		if resolvedPath, resolvedName, resolveErr := resolveDocPath(h.uploadRoot, docURL); resolveErr == nil {
+			if stat, statErr := os.Stat(resolvedPath); statErr == nil && !stat.IsDir() {
+				filePath = resolvedPath
+				filename = resolvedName
+			}
+		}
+	}
+	if filePath == "" {
+		if legacyPath, legacyName, ok := findLegacyDocPath(h.uploadRoot, id.String()); ok {
+			filePath = legacyPath
+			filename = legacyName
+			_ = h.repo.SetVerificationDocURL(ctx, id, "/uploads/docs/"+legacyName)
+		} else {
+			c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
+			return
+		}
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", filename))
+	c.Header("Cache-Control", "private, no-store")
+	c.File(filePath)
+}
+
+type verificationDoc struct {
+	Name        string `json:"name"`
+	ContentType string `json:"content_type"`
+}
+
+func listVerificationDocs(uploadRoot, userID string) ([]verificationDoc, error) {
+	pattern := filepath.Join(uploadRoot, "docs", userID+"_doc.*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(matches)
+	docs := make([]verificationDoc, 0, len(matches))
+	for _, filePath := range matches {
+		name := filepath.Base(filePath)
+		ext := strings.ToLower(filepath.Ext(name))
+		contentType := mime.TypeByExtension(ext)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		docs = append(docs, verificationDoc{Name: name, ContentType: contentType})
+	}
+	return docs, nil
+}
+
+func resolveDocPath(uploadRoot, docURL string) (string, string, error) {
+	cleanURL := strings.TrimSpace(docURL)
+	if cleanURL == "" {
+		return "", "", fmt.Errorf("empty doc url")
+	}
+	if strings.HasPrefix(cleanURL, "http://") || strings.HasPrefix(cleanURL, "https://") {
+		parsed, err := url.Parse(cleanURL)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid doc url")
+		}
+		cleanURL = parsed.Path
+	}
+	if strings.HasPrefix(cleanURL, "uploads/") {
+		cleanURL = "/" + cleanURL
+	}
+	if !strings.HasPrefix(cleanURL, "/uploads/") {
+		return "", "", fmt.Errorf("invalid doc url")
+	}
+	rel := strings.TrimPrefix(cleanURL, "/uploads/")
+	if !strings.HasPrefix(rel, "docs/") {
+		return "", "", fmt.Errorf("invalid doc path")
+	}
+	rel = path.Clean(rel)
+	if strings.HasPrefix(rel, "..") || !strings.HasPrefix(rel, "docs/") {
+		return "", "", fmt.Errorf("invalid doc path")
+	}
+	filename := path.Base(rel)
+	return filepath.Join(uploadRoot, filepath.FromSlash(rel)), filename, nil
+}
+
+func findLegacyDocPath(uploadRoot, userID string) (string, string, bool) {
+	pattern := filepath.Join(uploadRoot, "docs", userID+"_doc.*")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return "", "", false
+	}
+	filePath := matches[0]
+	return filePath, filepath.Base(filePath), true
 }
 
 // ListProducts returns paginated product list with search and filters.

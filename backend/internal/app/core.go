@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -100,10 +101,13 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	reportService := report.NewService(report.NewRepository(pool), pub, cfg.AdminEmail)
 	reportHandler := report.NewHandler(reportService)
 	wsHandler := ws.NewWSHandler(hub, cfg.JWTSecret, cfg.AllowedOrigins)
-	adminHandler := admin.NewHandler(admin.NewRepository(pool, cacheClient))
+	adminHandler := admin.NewHandler(admin.NewRepository(pool, cacheClient), cfg.UploadDir)
 
 	router := newBaseRouter(cfg)
-	router.Static("/uploads", store.Root())
+	uploadRoot := store.Root()
+	router.Static("/uploads/products", filepath.Join(uploadRoot, "products"))
+	router.Static("/uploads/avatars", filepath.Join(uploadRoot, "avatars"))
+	router.Static("/uploads/thumbnails", filepath.Join(uploadRoot, "thumbnails"))
 	if authHandler != nil {
 		registerAuthRoutes(router, cfg, authHandler)
 	}
@@ -196,6 +200,7 @@ func registerCoreRoutes(
 	{
 		adm.GET("/stats", adminHandler.Stats)
 		adm.GET("/users", adminHandler.ListUsers)
+		adm.GET("/users/:id/verify-doc", adminHandler.GetVerificationDoc)
 		adm.PUT("/users/:id/verification", adminHandler.UpdateUserVerification)
 		adm.DELETE("/users/:id", adminHandler.DeleteUser)
 		adm.GET("/products", adminHandler.ListProducts)

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { deleteUser, listUsers, updateUserVerification } from '../services/adminService'
+import { deleteUser, getUserVerificationDoc, listUserVerificationDocs, listUsers, updateUserVerification } from '../services/adminService'
 import { useLang } from '../context/LangContext.jsx'
-import { Search, ChevronLeft, ChevronRight, CheckCircle, XCircle, Trash2, Shield } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, CheckCircle, XCircle, Trash2, Shield, FileText, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 const VERIFICATIONS = ['', 'unverified', 'pending', 'verified']
 
@@ -13,6 +13,18 @@ const Users = () => {
   const [search, setSearch] = useState('')
   const [verification, setVerification] = useState('')
   const [loading, setLoading] = useState(true)
+  const [docViewer, setDocViewer] = useState({
+    open: false,
+    user: null,
+    docs: [],
+    index: 0,
+    url: '',
+    contentType: '',
+    loading: false,
+    error: ''
+  })
+  const [docZoom, setDocZoom] = useState(1)
+  const [docSize, setDocSize] = useState({ width: 0, height: 0 })
 
   const limit = 15
 
@@ -33,6 +45,12 @@ const Users = () => {
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
+  useEffect(() => {
+    return () => {
+      if (docViewer.url) URL.revokeObjectURL(docViewer.url)
+    }
+  }, [docViewer.url])
+
   const totalPages = Math.ceil(total / limit) || 1
 
   const handleVerify = async (id, status) => {
@@ -51,6 +69,72 @@ const Users = () => {
     } catch {}
   }
 
+  const closeDocViewer = () => {
+    if (docViewer.url) URL.revokeObjectURL(docViewer.url)
+    setDocViewer({ open: false, user: null, docs: [], index: 0, url: '', contentType: '', loading: false, error: '' })
+    setDocZoom(1)
+    setDocSize({ width: 0, height: 0 })
+  }
+
+  const clampZoom = (value) => Math.max(0.5, Math.min(3, value))
+
+  const loadDoc = async (userId, docs, index) => {
+    if (!userId || !docs?.length) return
+    if (docViewer.url) URL.revokeObjectURL(docViewer.url)
+    setDocViewer(prev => ({ ...prev, docs, index, loading: true, error: '' }))
+    setDocZoom(1)
+    setDocSize({ width: 0, height: 0 })
+    try {
+      const doc = docs[index]
+      const blob = await getUserVerificationDoc(userId, doc?.name)
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      setDocViewer(prev => ({
+        ...prev,
+        docs,
+        index,
+        url,
+        contentType: doc?.content_type || blob.type || '',
+        loading: false,
+        error: ''
+      }))
+    } catch {
+      setDocViewer(prev => ({ ...prev, loading: false, error: t.openDocFailed }))
+    }
+  }
+
+  const handleOpenDoc = async (user) => {
+    setDocViewer({ open: true, user, docs: [], index: 0, url: '', contentType: '', loading: true, error: '' })
+    setDocZoom(1)
+    setDocSize({ width: 0, height: 0 })
+    try {
+      const data = await listUserVerificationDocs(user.id)
+      const docs = data?.docs || []
+      if (!docs.length) throw new Error('no-docs')
+      const primary = data?.primary
+      const index = Math.max(0, docs.findIndex(d => d.name === primary))
+      await loadDoc(user.id, docs, index)
+    } catch {
+      try {
+        const blob = await getUserVerificationDoc(user.id)
+        if (!blob) throw new Error('no-doc')
+        const url = URL.createObjectURL(blob)
+        setDocViewer({
+          open: true,
+          user,
+          docs: [{ name: 'document', content_type: blob.type || 'application/octet-stream' }],
+          index: 0,
+          url,
+          contentType: blob.type || '',
+          loading: false,
+          error: ''
+        })
+      } catch {
+        setDocViewer(prev => ({ ...prev, loading: false, error: t.noVerificationDoc }))
+      }
+    }
+  }
+
   const statusBadge = (s) => {
     const map = {
       verified: 'bg-uniloop-100 text-uniloop-700',
@@ -63,6 +147,8 @@ const Users = () => {
       </span>
     )
   }
+
+  const docUserId = docViewer.user?.id
 
   return (
     <div className="p-8">
@@ -131,6 +217,11 @@ const Users = () => {
                   <td className="px-4 py-3 text-slate-500 text-xs">{new Date(u.created_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
+                      {(u.verification_doc_url || u.verification_status !== 'unverified') && (
+                        <button onClick={() => handleOpenDoc(u)} title={t.viewVerificationDoc} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors">
+                          <FileText size={16} />
+                        </button>
+                      )}
                       {u.verification_status !== 'verified' && (
                         <button onClick={() => handleVerify(u.id, 'verified')} title="Verify" className="p-1.5 rounded-lg hover:bg-uniloop-50 text-slate-400 hover:text-uniloop-600 transition-colors">
                           <CheckCircle size={16} />
@@ -168,6 +259,105 @@ const Users = () => {
           </div>
         )}
       </div>
+
+      {docViewer.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white w-[92vw] max-w-5xl h-[85vh] rounded-2xl shadow-xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <div className="text-sm font-bold text-slate-700">{t.verificationDocTitle}</div>
+              <button onClick={closeDocViewer} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-4 py-2 border-b border-slate-100 flex items-center gap-2">
+              <button
+                onClick={() => loadDoc(docUserId, docViewer.docs, Math.max(0, docViewer.index - 1))}
+                disabled={!docUserId || docViewer.docs.length <= 1 || docViewer.index === 0 || docViewer.loading}
+                className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={t.prevDoc}
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => loadDoc(docUserId, docViewer.docs, Math.min(docViewer.docs.length - 1, docViewer.index + 1))}
+                disabled={!docUserId || docViewer.docs.length <= 1 || docViewer.index >= docViewer.docs.length - 1 || docViewer.loading}
+                className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={t.nextDoc}
+              >
+                <ChevronRight size={16} />
+              </button>
+              <div className="text-xs text-slate-500">
+                {docViewer.docs.length ? `${docViewer.index + 1} / ${docViewer.docs.length}` : t.noVerificationDoc}
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setDocZoom(z => clampZoom(Math.round((z - 0.1) * 10) / 10))}
+                  disabled={docViewer.loading}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t.zoomOut}
+                >
+                  <ZoomOut size={16} />
+                </button>
+                <div className="text-xs text-slate-500 w-12 text-center">{Math.round(docZoom * 100)}%</div>
+                <button
+                  onClick={() => setDocZoom(z => clampZoom(Math.round((z + 0.1) * 10) / 10))}
+                  disabled={docViewer.loading}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={t.zoomIn}
+                >
+                  <ZoomIn size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-slate-50 min-h-0">
+              {docViewer.loading ? (
+                <div className="h-full flex items-center justify-center text-slate-400">{t.loadingDoc}</div>
+              ) : docViewer.error ? (
+                <div className="h-full flex items-center justify-center text-slate-400">{docViewer.error}</div>
+              ) : docViewer.url ? (
+                (() => {
+                  const current = docViewer.docs[docViewer.index]
+                  const type = (docViewer.contentType || current?.content_type || '').toLowerCase()
+                  const isPdf = type.includes('pdf') || current?.name?.toLowerCase().endsWith('.pdf')
+                  if (isPdf) {
+                    const pdfZoom = Math.round(docZoom * 100)
+                    return (
+                      <iframe
+                        title="verification-doc"
+                        className="w-full h-full"
+                        src={`${docViewer.url}#zoom=${pdfZoom}`}
+                      />
+                    )
+                  }
+                  return (
+                    <div className="w-full h-full min-h-0 overflow-auto">
+                      <div className="min-h-full min-w-full flex items-center justify-center p-6">
+                        <img
+                          src={docViewer.url}
+                          alt="verification"
+                          className="block max-w-none"
+                          onLoad={(e) => {
+                            const img = e.currentTarget
+                            if (img.naturalWidth && img.naturalHeight) {
+                              setDocSize({ width: img.naturalWidth, height: img.naturalHeight })
+                            }
+                          }}
+                          style={{
+                            width: docSize.width ? `${docSize.width * docZoom}px` : 'auto',
+                            height: docSize.height ? `${docSize.height * docZoom}px` : 'auto'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : (
+                <div className="h-full flex items-center justify-center text-slate-400">{t.noVerificationDoc}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
