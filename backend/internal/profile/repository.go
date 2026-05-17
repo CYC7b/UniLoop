@@ -87,6 +87,16 @@ func (r *Repository) SetVerificationStatus(ctx context.Context, id uuid.UUID, st
 	return err
 }
 
+func (r *Repository) SetVerificationDoc(ctx context.Context, id uuid.UUID, docURL string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE profiles SET verification_status='pending', verification_doc_url=$1, updated_at=NOW() WHERE id=$2`,
+		docURL, id)
+	if err == nil {
+		r.cache.Delete(ctx, cache.ProfileKey(id))
+	}
+	return err
+}
+
 func (r *Repository) TouchLastSeen(ctx context.Context, id uuid.UUID) {
 	_, _ = r.db.Exec(ctx, `UPDATE profiles SET last_seen_at=NOW() WHERE id=$1`, id)
 	// Invalidate so next read reflects updated last_seen_at

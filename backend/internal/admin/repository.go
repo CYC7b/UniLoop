@@ -46,6 +46,22 @@ func (r *Repository) UpdateUserVerification(ctx context.Context, id uuid.UUID, s
 	return err
 }
 
+func (r *Repository) GetVerificationDocURL(ctx context.Context, id uuid.UUID) (string, error) {
+	var url string
+	err := r.db.QueryRow(ctx,
+		`SELECT COALESCE(verification_doc_url, '') FROM profiles WHERE id=$1`, id).Scan(&url)
+	return url, err
+}
+
+func (r *Repository) SetVerificationDocURL(ctx context.Context, id uuid.UUID, url string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE profiles SET verification_doc_url=$1, updated_at=NOW() WHERE id=$2`, url, id)
+	if err == nil {
+		r.cache.Delete(ctx, cache.ProfileKey(id))
+	}
+	return err
+}
+
 func (r *Repository) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	unreadKeys := []string{cache.UnreadKey(id)}
 	rows, err := r.db.Query(ctx, `
