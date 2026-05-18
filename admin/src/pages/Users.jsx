@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { deleteUser, getUserVerificationDoc, listUserVerificationDocs, listUsers, updateUserVerification } from '../services/adminService'
 import { useLang } from '../context/LangContext.jsx'
 import { Search, ChevronLeft, ChevronRight, CheckCircle, XCircle, Trash2, Shield, FileText, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { DEFAULT_AVATAR } from '../lib/avatar'
 
 const VERIFICATIONS = ['', 'unverified', 'pending', 'verified']
 
@@ -203,7 +204,7 @@ const Users = () => {
                 <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <img src={u.avatar_url || 'data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2080%2080%27%3E%3Crect%20width%3D%2780%27%20height%3D%2780%27%20rx%3D%2740%27%20fill%3D%27%23e2e8f0%27%2F%3E%3Ccircle%20cx%3D%2740%27%20cy%3D%2730%27%20r%3D%2713%27%20fill%3D%27%2394a3b8%27%2F%3E%3Cpath%20d%3D%27M17%2068c4-15%2016-23%2023-23s19%208%2023%2023%27%20fill%3D%27%2394a3b8%27%2F%3E%3C%2Fsvg%3E'} alt="" className="w-8 h-8 rounded-full bg-slate-100 object-cover" onError={(e) => { e.target.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2220%22 fill=%22%23e2e8f0%22/%3E%3Ctext x=%2220%22 y=%2226%22 text-anchor=%22middle%22 fill=%22%2394a3b8%22 font-size=%2216%22%3E?%3C/text%3E%3C/svg%3E' }} />
+                      <img src={u.avatar_url || DEFAULT_AVATAR} alt="" className="w-8 h-8 rounded-full bg-slate-100 object-cover" onError={(e) => { e.target.src = DEFAULT_AVATAR }} />
                       <div className="font-semibold text-slate-800 flex items-center gap-1">
                         {u.full_name || 'Unnamed'}
                         {u.is_admin && <Shield size={12} className="text-uniloop-500" />}

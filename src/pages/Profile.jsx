@@ -6,6 +6,7 @@ import { useUI } from '../context/UIContext.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import { CheckCircle, Trash2, ChevronRight, UserCircle, X, Mail, FileText, Camera, Edit3 } from 'lucide-react'
 import ProductCardImage from '../components/ProductCardImage.jsx'
+import { DEFAULT_AVATAR } from '../lib/avatar'
 
 const Profile = () => {
   const navigate = useNavigate()
@@ -185,7 +186,7 @@ const Profile = () => {
           <div className="absolute -bottom-8 -left-8 w-24 h-24 bg-uniloop-300/20 rounded-full blur-xl pointer-events-none" />
           <div className="flex items-center gap-5 relative z-10">
             <div className="relative shrink-0">
-              <img onClick={() => fileRef.current?.click()} src={user.avatar || 'data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2080%2080%27%3E%3Crect%20width%3D%2780%27%20height%3D%2780%27%20rx%3D%2740%27%20fill%3D%27%23e2e8f0%27%2F%3E%3Ccircle%20cx%3D%2740%27%20cy%3D%2730%27%20r%3D%2713%27%20fill%3D%27%2394a3b8%27%2F%3E%3Cpath%20d%3D%27M17%2068c4-15%2016-23%2023-23s19%208%2023%2023%27%20fill%3D%27%2394a3b8%27%2F%3E%3C%2Fsvg%3E'} alt="avatar" className="w-20 h-20 rounded-full object-cover cursor-pointer border-[3px] border-white/80 shadow-[0_8px_16px_rgba(0,0,0,0.1)] transition-transform hover:scale-105" />
+              <img onClick={() => fileRef.current?.click()} src={user.avatar || DEFAULT_AVATAR} alt="avatar" className="w-20 h-20 rounded-full object-cover cursor-pointer border-[3px] border-white/80 shadow-[0_8px_16px_rgba(0,0,0,0.1)] transition-transform hover:scale-105" />
               <div className="absolute bottom-0 right-0 bg-white text-uniloop-600 p-1.5 rounded-full shadow-sm border-[2px] border-[#C07040]"><Camera size={12} strokeWidth={3} /></div>
             </div>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (!f) return; uploadAvatar(f) }} />

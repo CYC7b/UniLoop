@@ -8,6 +8,7 @@ import { MapPin, Phone, MessageSquare, Heart, Lock, Edit3, Flag, ExternalLink, C
 import { getPublicProfile } from '../services/profileService'
 import { SkeletonDetail } from '../components/Skeleton.jsx'
 import ReportModal from '../components/ReportModal.jsx'
+import { DEFAULT_AVATAR } from '../lib/avatar'
 
 const ProductDetail = () => {
   const { id } = useParams()
@@ -197,7 +198,7 @@ const ProductDetail = () => {
                 <div onClick={() => navigate(`/user/${item.owner_id}`)} className="pt-6 border-t border-slate-100 cursor-pointer group">
                   <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 transition-all group-hover:bg-uniloop-50 group-hover:border-uniloop-100">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-sm shrink-0"><img src={sellerProfile.avatar_url || 'data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2080%2080%27%3E%3Crect%20width%3D%2780%27%20height%3D%2780%27%20rx%3D%2740%27%20fill%3D%27%23e2e8f0%27%2F%3E%3Ccircle%20cx%3D%2740%27%20cy%3D%2730%27%20r%3D%2713%27%20fill%3D%27%2394a3b8%27%2F%3E%3Cpath%20d%3D%27M17%2068c4-15%2016-23%2023-23s19%208%2023%2023%27%20fill%3D%27%2394a3b8%27%2F%3E%3C%2Fsvg%3E'} alt="Seller Avatar" className="w-full h-full object-cover" /></div>
+                      <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow-sm shrink-0"><img src={sellerProfile.avatar_url || DEFAULT_AVATAR} alt="Seller Avatar" className="w-full h-full object-cover" /></div>
                       <div className="flex flex-col"><span className="text-[14px] font-bold text-slate-800 leading-tight">{sellerProfile.full_name}</span><span className="text-[12px] text-slate-500">{sellerProfile.school || 'Universiti Malaya (UM)'}</span></div>
                     </div>
                     <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-400 group-hover:text-uniloop-600 transition-colors"><ChevronRight size={18} /></div>
