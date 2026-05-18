@@ -109,6 +109,27 @@ Use the admin credentials configured in `backend/.env`.
 
 ## Backend
 
+The backend is written in Go with Gin and is organized as a small set of focused
+services that share the same PostgreSQL database and infrastructure:
+
+- `cmd/server` starts the monolithic backend entrypoint used for direct local runs
+- `internal/app` wires together handlers, repositories, middleware, storage, CORS,
+  rate limiting, Redis, RabbitMQ, and static upload serving
+- `services/auth` exposes only the auth and OTP endpoints
+- `services/core` exposes the marketplace, profile, favorites, conversation,
+  report, admin, and WebSocket endpoints
+- `services/notification` consumes RabbitMQ email events and sends SMTP mail
+
+The request flow is split this way:
+
+1. The auth service handles registration, login, `/me`, and OTP verification.
+2. The core service handles products, profiles, uploads, favorites, conversations,
+   reports, admin moderation, and the WebSocket chat hub.
+3. The notification service listens for published email events and retries failed
+   deliveries through RabbitMQ.
+4. Nginx acts as the gateway in Docker Compose and forwards traffic to the auth
+   and core services.
+
 Run backend tests:
 
 ```bash
