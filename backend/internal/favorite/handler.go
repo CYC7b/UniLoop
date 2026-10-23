@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"uniloop/backend/internal/httperr"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
 )
@@ -21,7 +22,7 @@ func (h *Handler) List(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	items, ids, err := h.service.List(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	if items == nil {
@@ -41,7 +42,7 @@ func (h *Handler) Add(c *gin.Context) {
 		return
 	}
 	if err := h.service.Add(c.Request.Context(), userID, req.ProductID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "added"})
@@ -55,7 +56,7 @@ func (h *Handler) Remove(c *gin.Context) {
 		return
 	}
 	if err := h.service.Remove(c.Request.Context(), userID, productID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -65,7 +66,7 @@ func (h *Handler) GetIDs(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	ids, err := h.service.ListIDs(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	if ids == nil {

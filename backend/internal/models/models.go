@@ -131,9 +131,11 @@ type UpdateProfileRequest struct {
 	School string `json:"school"`
 }
 
+// Price is a pointer so "required" means present: 0 is a valid (free) price.
+// The upper bound is the largest value products.price, NUMERIC(10,2), holds.
 type CreateProductRequest struct {
 	Title        string      `json:"title" binding:"required"`
-	Price        float64     `json:"price" binding:"required"`
+	Price        *float64    `json:"price" binding:"required,gte=0,lte=99999999.99"`
 	Currency     string      `json:"currency"`
 	Description  string      `json:"description"`
 	Images       []string    `json:"images" binding:"required,min=1"`
@@ -149,7 +151,7 @@ type CreateProductRequest struct {
 // UpdateProductRequest uses pointers so nil = "not provided" vs zero-value = "set to empty/zero".
 type UpdateProductRequest struct {
 	Title        *string      `json:"title"`
-	Price        *float64     `json:"price"`
+	Price        *float64     `json:"price" binding:"omitempty,gte=0,lte=99999999.99"`
 	Currency     *string      `json:"currency"`
 	Description  *string      `json:"description"`
 	Images       []string     `json:"images"`
@@ -172,7 +174,7 @@ type SendMessageRequest struct {
 }
 
 type CreateReportRequest struct {
-	TargetType string    `json:"target_type" binding:"required"`
+	TargetType string    `json:"target_type" binding:"required,oneof=product user conversation"`
 	TargetID   uuid.UUID `json:"target_id" binding:"required"`
 	Reason     string    `json:"reason"`
 }

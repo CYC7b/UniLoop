@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"uniloop/backend/internal/httperr"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
 	"uniloop/backend/internal/pagination"
@@ -79,7 +80,7 @@ func (h *Handler) List(c *gin.Context) {
 
 	page, err := h.repo.List(c.Request.Context(), p)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	var next *string
@@ -147,7 +148,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	if replayed {
@@ -181,7 +182,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, p)
@@ -200,7 +201,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.repo.Delete(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -214,7 +215,7 @@ func (h *Handler) Locations(c *gin.Context) {
 	}
 	locs, err := h.repo.ListLocations(c.Request.Context(), p)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	if locs == nil {

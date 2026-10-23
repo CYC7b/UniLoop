@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"uniloop/backend/internal/httperr"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
 	"uniloop/backend/internal/product"
@@ -69,7 +70,7 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 		return
 	}
 	if err := h.repo.Update(c.Request.Context(), userID, req.Name, req.School); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	p, _ := h.repo.GetByID(c.Request.Context(), userID)
@@ -116,7 +117,7 @@ func (h *Handler) UploadAvatar(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateAvatar(c.Request.Context(), userID, url); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"avatar_url": url})
@@ -155,7 +156,7 @@ func (h *Handler) SubmitVerifyDoc(c *gin.Context) {
 	}
 
 	if err := h.repo.SetVerificationDoc(c.Request.Context(), userID, url); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "submitted for review"})

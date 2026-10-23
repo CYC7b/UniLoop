@@ -48,7 +48,7 @@ const EditProduct = () => {
     useEffect(() => {
         if (item) {
             setTitle(item.title || '')
-            setPrice(item.price || '')
+            setPrice(item.price ?? '')
             setDescription(item.description || '')
             setWhatsapp(item.whatsapp || '')
             setWechat(item.wechat || '')

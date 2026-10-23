@@ -56,6 +56,9 @@ func main() {
 	authHandler := auth.NewHandler(authSvc)
 
 	r := gin.New()
+	if err := middleware.TrustProxies(r, cfg.TrustedProxies); err != nil {
+		log.Fatalf("trusted proxies: %v", err)
+	}
 	r.Use(gin.Logger(), gin.Recovery())
 
 	corsConfig := cors.DefaultConfig()
