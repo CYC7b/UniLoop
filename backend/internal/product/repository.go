@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"uniloop/backend/internal/models"
+	"uniloop/backend/internal/pagination"
 	"uniloop/backend/pkg/cache"
 )
 
@@ -32,7 +33,7 @@ type ListParams struct {
 	ExcludeCategories []string
 	Location          string
 	Search            string
-	Page              int
+	Cursor            *pagination.Cursor
 	Limit             int
 	UserLat           *float64
 	UserLng           *float64
@@ -44,14 +45,24 @@ type LocationParams struct {
 	ExcludeCategories []string
 }
 
+// ListPage is one page of listings; NextCursor is empty on the last page.
+type ListPage struct {
+	Items      []models.Product `json:"items"`
+	NextCursor string           `json:"next_cursor"`
+}
+
 // listCacheKey returns a deterministic key for the given params.
 // Geo-filtered queries are not cached (infinite lat/lng combinations).
 func listCacheKey(p ListParams) (string, bool) {
 	if p.UserLat != nil || p.UserLng != nil || p.MaxDist != nil {
 		return "", false // skip geo queries
 	}
-	raw := fmt.Sprintf("cat=%s:exclude=%s:loc=%s:q=%s:page=%d:limit=%d",
-		p.Category, strings.Join(p.ExcludeCategories, ","), p.Location, p.Search, p.Page, p.Limit)
+	cursor := ""
+	if p.Cursor != nil {
+		cursor = p.Cursor.Encode()
+	}
+	raw := fmt.Sprintf("cat=%s:exclude=%s:loc=%s:q=%s:cursor=%s:limit=%d",
+		p.Category, strings.Join(p.ExcludeCategories, ","), p.Location, p.Search, cursor, p.Limit)
 	h := md5.Sum([]byte(raw))
 	return fmt.Sprintf("products:%x", h), true
 }
@@ -65,38 +76,28 @@ func locationsCacheKey(p LocationParams) string {
 	return fmt.Sprintf("locations:%x", h)
 }
 
-func (r *Repository) List(ctx context.Context, p ListParams) ([]models.Product, error) {
-	if p.Limit <= 0 {
-		p.Limit = 20
-	}
-	if p.Page <= 0 {
-		p.Page = 1
-	}
+func (r *Repository) List(ctx context.Context, p ListParams) (*ListPage, error) {
+	p.Limit = pagination.ClampLimit(p.Limit, 20, 50)
 
 	// Cache-Aside (only for non-geo queries)
 	if key, ok := listCacheKey(p); ok {
-		var cached []models.Product
+		var cached ListPage
 		if r.cache.GetJSON(ctx, key, &cached) {
-			return cached, nil
+			return &cached, nil
 		}
 
-		results, err := r.listFromDB(ctx, p)
+		page, err := r.listFromDB(ctx, p)
 		if err != nil {
 			return nil, err
 		}
-		if results == nil {
-			results = []models.Product{}
-		}
-		r.cache.SetJSON(ctx, key, results, productsTTL)
-		return results, nil
+		r.cache.SetJSON(ctx, key, page, productsTTL)
+		return page, nil
 	}
 
 	return r.listFromDB(ctx, p)
 }
 
-func (r *Repository) listFromDB(ctx context.Context, p ListParams) ([]models.Product, error) {
-	offset := (p.Page - 1) * p.Limit
-
+func (r *Repository) listFromDB(ctx context.Context, p ListParams) (*ListPage, error) {
 	where := []string{"status = 'active'"}
 	args := []any{}
 	n := 1
@@ -116,7 +117,7 @@ func (r *Repository) listFromDB(ctx context.Context, p ListParams) ([]models.Pro
 		n++
 	}
 	if p.Location != "" && p.Location != "All Locations" {
-		where = append(where, fmt.Sprintf("TRIM(SPLIT_PART(location_name, ',', 1)) = $%d", n))
+		where = append(where, fmt.Sprintf("location_short = $%d", n))
 		args = append(args, p.Location)
 		n++
 	}
@@ -125,7 +126,7 @@ func (r *Repository) listFromDB(ctx context.Context, p ListParams) ([]models.Pro
 		where = append(where, fmt.Sprintf(
 			`(search_vector @@ plainto_tsquery('english', $%d)
 			 OR title ILIKE $%d
-			 OR TRIM(SPLIT_PART(location_name, ',', 1)) ILIKE $%d)`,
+			 OR location_short ILIKE $%d)`,
 			n, n+1, n+2))
 		args = append(args, p.Search, "%"+escaped+"%", "%"+escaped+"%")
 		n += 3
@@ -141,16 +142,22 @@ func (r *Repository) listFromDB(ctx context.Context, p ListParams) ([]models.Pro
 		args = append(args, *p.UserLat, *p.UserLng, *p.UserLat, *p.MaxDist)
 		n += 4
 	}
+	if p.Cursor != nil {
+		where = append(where, fmt.Sprintf("(created_at, id) < ($%d, $%d)", n, n+1))
+		args = append(args, p.Cursor.CreatedAt, p.Cursor.ID)
+		n += 2
+	}
 
 	query := fmt.Sprintf(`
 		SELECT id, title, price, currency, description, images, thumbnails, category, tags,
 		       location_name, lat, lng, owner_id, contact_info, status, created_at, updated_at
 		FROM products
 		WHERE %s
-		ORDER BY created_at DESC
-		LIMIT $%d OFFSET $%d`,
-		strings.Join(where, " AND "), n, n+1)
-	args = append(args, p.Limit, offset)
+		ORDER BY created_at DESC, id DESC
+		LIMIT $%d`,
+		strings.Join(where, " AND "), n)
+	// Fetch one extra row to learn whether another page exists.
+	args = append(args, p.Limit+1)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -158,15 +165,23 @@ func (r *Repository) listFromDB(ctx context.Context, p ListParams) ([]models.Pro
 	}
 	defer rows.Close()
 
-	var results []models.Product
+	page := &ListPage{Items: []models.Product{}}
 	for rows.Next() {
 		prod, err := scanProduct(rows)
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, *prod)
+		page.Items = append(page.Items, *prod)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(page.Items) > p.Limit {
+		page.Items = page.Items[:p.Limit]
+		last := page.Items[p.Limit-1]
+		page.NextCursor = pagination.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}.Encode()
+	}
+	return page, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Product, error) {
@@ -353,7 +368,7 @@ func (r *Repository) ListLocations(ctx context.Context, p LocationParams) ([]str
 		return cached, nil
 	}
 
-	where := []string{"status = 'active'", "location_name IS NOT NULL", "location_name <> ''"}
+	where := []string{"status = 'active'", "location_short <> ''"}
 	args := []any{}
 	n := 1
 
@@ -373,10 +388,10 @@ func (r *Repository) ListLocations(ctx context.Context, p LocationParams) ([]str
 	}
 
 	query := fmt.Sprintf(`
-		SELECT TRIM(SPLIT_PART(location_name, ',', 1)) AS short_name
+		SELECT location_short
 		FROM products
 		WHERE %s
-		GROUP BY short_name
+		GROUP BY location_short
 		ORDER BY COUNT(*) DESC`, strings.Join(where, " AND "))
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {

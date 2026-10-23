@@ -125,6 +125,32 @@ export const ChatProvider = ({ children }) => {
     }
   }, [session?.user])
 
+  // Prepends the page of messages before `cursor`; resolves to how many were added.
+  const loadOlderMessages = useCallback(async (conversationId, cursor) => {
+    if (!session?.user || !cursor) return 0
+    try {
+      const res = await conversationService.listConversationMessages(conversationId, cursor)
+      const older = (res.data || []).map(message => mapMessage(message, session.user.id))
+      let added = 0
+      setConversations(prev => prev.map(conversation => {
+        if (conversation.id !== conversationId) return conversation
+        const known = new Set(conversation.messages.map(message => message.id))
+        const fresh = older.filter(message => !known.has(message.id))
+        added = fresh.length
+        return {
+          ...conversation,
+          messages: [...fresh, ...conversation.messages],
+          olderMessagesCursor: res.next_cursor || null
+        }
+      }))
+      return added
+    } catch (err) {
+      console.error('Error loading older messages:', err)
+      showToast('error', language === 'zh' ? '加载历史消息失败' : 'Failed to load earlier messages')
+      return 0
+    }
+  }, [language, session, showToast])
+
   const markConversationRead = useCallback(async (conversationId) => {
     if (!session?.user) return
     try {
@@ -245,6 +271,7 @@ export const ChatProvider = ({ children }) => {
     conversationLoading,
     fetchConversations,
     fetchConversationDetail,
+    loadOlderMessages,
     markConversationRead,
     sendMessage,
     findConversation,
@@ -254,7 +281,7 @@ export const ChatProvider = ({ children }) => {
     reportContent,
     unreadCount,
     disconnectWS
-  }), [conversations, conversationLoading, fetchConversations, fetchConversationDetail, markConversationRead, sendMessage,
+  }), [conversations, conversationLoading, fetchConversations, fetchConversationDetail, loadOlderMessages, markConversationRead, sendMessage,
     findConversation, createConversationWithMessage, addIncomingMessage, deleteConversation,
     reportContent, unreadCount, disconnectWS])
 

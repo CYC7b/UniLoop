@@ -55,13 +55,13 @@ const Home = () => {
     setActiveCat(tab === 'rent' ? 'Rentals' : 'All')
     setAppliedTerm('')
     setTerm('')
-    setPage(1)
+    setNextCursor(null)
   }
 
   // Pagination & Backend Fetch States
   const [appliedTerm, setAppliedTerm] = useState('')
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(true)
+  const [nextCursor, setNextCursor] = useState(null)
+  const hasMore = Boolean(nextCursor)
   const [hasFetched, setHasFetched] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
@@ -191,8 +191,7 @@ const Home = () => {
     setHasFetched(false)
     const excludeCategories = activeTab === 'buy' ? ['Rentals'] : []
     const doFetch = async () => {
-      const more = await fetchProducts(session?.user?.id, {
-        page: 1,
+      const next = await fetchProducts(session?.user?.id, {
         searchTerm: appliedTerm,
         categoryFilter: activeCat,
         excludeCategories,
@@ -202,8 +201,7 @@ const Home = () => {
         maxDistanceKm: distance
       })
       if (mounted) {
-        setHasMore(more)
-        setPage(1)
+        if (next !== undefined) setNextCursor(next)
         setHasFetched(true)
       }
     }
@@ -212,11 +210,10 @@ const Home = () => {
   }, [appliedTerm, activeCat, activeLoc, activeTab, distance, userLocation, fetchProducts, session?.user?.id, refreshKey])
 
   const loadMore = async () => {
-    if (!hasMore || loading.products) return
-    const nextPage = page + 1
+    if (!nextCursor || loading.products) return
     const excludeCategories = activeTab === 'buy' ? ['Rentals'] : []
-    const more = await fetchProducts(session?.user?.id, {
-      page: nextPage,
+    const next = await fetchProducts(session?.user?.id, {
+      cursor: nextCursor,
       searchTerm: appliedTerm,
       categoryFilter: activeCat,
       excludeCategories,
@@ -225,8 +222,7 @@ const Home = () => {
       userLng: userLocation?.lng,
       maxDistanceKm: distance
     })
-    setHasMore(more)
-    setPage(nextPage)
+    if (next !== undefined) setNextCursor(next)
   }
 
   const getDistance = (lat1, lon1, lat2, lon2) => {

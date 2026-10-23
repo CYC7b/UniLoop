@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
+	"uniloop/backend/internal/pagination"
 	"uniloop/backend/internal/storage"
 )
 
@@ -46,8 +47,13 @@ func (h *Handler) List(c *gin.Context) {
 		Location:          c.Query("location"),
 		Search:            c.Query("search"),
 	}
-	p.Page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
 	p.Limit, _ = strconv.Atoi(c.DefaultQuery("limit", "20"))
+	cursor, err := pagination.Decode(c.Query("cursor"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	p.Cursor = cursor
 
 	if lat := c.Query("lat"); lat != "" {
 		v, err := strconv.ParseFloat(lat, 64)
@@ -68,15 +74,16 @@ func (h *Handler) List(c *gin.Context) {
 		}
 	}
 
-	products, err := h.repo.List(c.Request.Context(), p)
+	page, err := h.repo.List(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if products == nil {
-		products = []models.Product{}
+	var next *string
+	if page.NextCursor != "" {
+		next = &page.NextCursor
 	}
-	c.JSON(http.StatusOK, gin.H{"data": products, "page": p.Page, "limit": p.Limit})
+	c.JSON(http.StatusOK, gin.H{"data": page.Items, "next_cursor": next})
 }
 
 func splitCSV(s string) []string {

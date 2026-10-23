@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useChat } from '../context/ChatContext.jsx'
@@ -13,13 +13,15 @@ const ChatRoom = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { session } = useAuth()
-  const { conversations, sendMessage, fetchConversationDetail, markConversationRead, createConversationWithMessage } = useChat()
+  const { conversations, sendMessage, fetchConversationDetail, loadOlderMessages, markConversationRead, createConversationWithMessage } = useChat()
   const { getProductById } = useProducts()
   const { language, translations, showToast } = useUI()
   const t = translations[language]
   const [inputText, setInputText] = useState('')
   const [showReport, setShowReport] = useState(false)
   const scrollRef = useRef(null)
+  const restoreScrollRef = useRef(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
 
   const isNewConversation = id === 'new'
   const productIdFromQuery = searchParams.get('productId')
@@ -103,13 +105,26 @@ const ChatRoom = () => {
     }
   }, [])
 
+  // Stick to the bottom when a newer message arrives, not when older ones are prepended.
+  const lastMessageId = conv?.messages?.[conv.messages.length - 1]?.id
+  const firstMessageId = conv?.messages?.[0]?.id
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [conv?.messages, vp.height])
+  }, [lastMessageId, vp.height])
+
+  // After prepending older messages, keep the previously visible message in place.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const saved = restoreScrollRef.current
+    if (!el || !saved) return
+    el.scrollTop = el.scrollHeight - saved.height + saved.top
+    restoreScrollRef.current = null
+  }, [firstMessageId])
 
   useEffect(() => {
     if (id && !isNewConversation) markConversationRead(id)
-  }, [id, isNewConversation, conv?.messages?.length, markConversationRead])
+  }, [id, isNewConversation, lastMessageId, markConversationRead])
 
   if (isNewConversation && !productIdFromQuery) return <div className="p-4">{t.noMessages}</div>
   if (!isNewConversation && !conv) return <div className="p-4">{t.noMessages}</div>
@@ -117,6 +132,16 @@ const ChatRoom = () => {
   const otherName = isNewConversation ? (sellerProfile?.full_name || 'Seller') : (conv?.sellerName || 'User')
   const otherUserId = isNewConversation ? product?.owner_id : conv?.otherUserId
   const messages = conv?.messages || []
+
+  const handleLoadOlder = async () => {
+    if (!conv?.olderMessagesCursor || loadingOlder) return
+    const el = scrollRef.current
+    if (el) restoreScrollRef.current = { height: el.scrollHeight, top: el.scrollTop }
+    setLoadingOlder(true)
+    const added = await loadOlderMessages(id, conv.olderMessagesCursor)
+    if (added === 0) restoreScrollRef.current = null
+    setLoadingOlder(false)
+  }
 
   const handleSend = async (e) => {
     e.preventDefault()
@@ -179,6 +204,13 @@ const ChatRoom = () => {
       )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {conv?.olderMessagesCursor && (
+          <div className="text-center">
+            <button onClick={handleLoadOlder} disabled={loadingOlder} className="text-[11px] font-bold text-uniloop-600 bg-white border border-gray-200 px-3 py-1 rounded-full disabled:opacity-50">
+              {loadingOlder ? (language === 'zh' ? '加载中…' : 'Loading…') : (language === 'zh' ? '加载更早的消息' : 'Load earlier messages')}
+            </button>
+          </div>
+        )}
         <div className="text-center"><span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-1 rounded-full uppercase tracking-wider">{t.safetyTip}</span></div>
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'me' ? 'justify-end' : 'justify-start'}`}>

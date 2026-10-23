@@ -16,6 +16,7 @@ export const mapConversation = (conversation, currentUserId, unreadOverride) => 
   sellerName: conversation.other_name || 'User',
   otherUserId: conversation.other_user_id,
   messages: (conversation.messages || []).map(message => mapMessage(message, currentUserId)),
+  olderMessagesCursor: conversation.older_messages_cursor || null,
   lastMessage: conversation.last_message,
   lastTimestamp: new Date(conversation.updated_at).getTime(),
   unreadCount: unreadOverride ?? (conversation.unread_count || 0)
@@ -23,6 +24,12 @@ export const mapConversation = (conversation, currentUserId, unreadOverride) => 
 
 export const listConversations = () => api.get('/api/conversations')
 export const getConversation = (conversationId) => api.get(`/api/conversations/${conversationId}`)
+export const listConversationMessages = (conversationId, before) => {
+  const params = new URLSearchParams()
+  if (before) params.set('before', before)
+  const query = params.toString()
+  return api.get(`/api/conversations/${conversationId}/messages${query ? `?${query}` : ''}`)
+}
 export const markConversationRead = (conversationId) => api.put(`/api/conversations/${conversationId}/read`)
 export const deleteConversation = (conversationId) => api.del(`/api/conversations/${conversationId}`)
 export const sendConversationMessage = (conversationId, content) => {

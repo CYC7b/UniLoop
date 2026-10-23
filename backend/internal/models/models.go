@@ -73,11 +73,12 @@ type Conversation struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	// Computed per-request fields
-	Messages      []Message `json:"messages,omitempty"`
-	UnreadCount   int       `json:"unread_count"`
-	OtherUserID   uuid.UUID `json:"other_user_id"`
-	OtherName     string    `json:"other_name"`
-	ProductStatus string    `json:"product_status"`
+	Messages            []Message `json:"messages,omitempty"`
+	OlderMessagesCursor string    `json:"older_messages_cursor,omitempty"`
+	UnreadCount         int       `json:"unread_count"`
+	OtherUserID         uuid.UUID `json:"other_user_id"`
+	OtherName           string    `json:"other_name"`
+	ProductStatus       string    `json:"product_status"`
 }
 
 type Message struct {

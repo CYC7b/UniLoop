@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"uniloop/backend/internal/models"
+	"uniloop/backend/internal/pagination"
 	"uniloop/backend/internal/product"
 	"uniloop/backend/internal/profile"
 	"uniloop/backend/internal/ws"
@@ -90,6 +91,13 @@ func (s *Service) GetOne(ctx context.Context, userID, id uuid.UUID) (*models.Con
 	}
 	conv.OtherUserID, conv.OtherName, conv.UnreadCount = convPOV(*conv, userID)
 	return conv, nil
+}
+
+func (s *Service) ListMessages(ctx context.Context, userID, id uuid.UUID, before *pagination.Cursor, limit int) ([]models.Message, string, error) {
+	if err := s.ensureParticipant(ctx, id, userID); err != nil {
+		return nil, "", err
+	}
+	return s.repo.ListMessages(ctx, id, before, limit)
 }
 
 func (s *Service) SendMessage(ctx context.Context, userID, id uuid.UUID, content string) (*models.Message, error) {

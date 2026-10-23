@@ -37,7 +37,7 @@ export const mapDBProduct = (p, currentUserId) => ({
 })
 
 export async function listProducts({
-  page = 1,
+  cursor = null,
   limit = 20,
   searchTerm = '',
   categoryFilter = 'All',
@@ -48,7 +48,7 @@ export async function listProducts({
   maxDistanceKm = null
 } = {}) {
   const params = new URLSearchParams()
-  params.set('page', page)
+  if (cursor) params.set('cursor', cursor)
   params.set('limit', limit)
   if (searchTerm) params.set('search', searchTerm)
   if (categoryFilter && categoryFilter !== 'All') params.set('category', categoryFilter)
