@@ -7,6 +7,7 @@ import LocationPicker from '../components/LocationPicker.jsx'
 import { ArrowLeft, X, Plus } from 'lucide-react'
 import { LoadingButton } from '../components/LoadingSpinner.jsx'
 import { compressImages, generateThumbnail } from '../lib/imageUtils.js'
+import { pairImages } from '../lib/productImages.js'
 
 const EditProduct = () => {
     const { id } = useParams()
@@ -37,8 +38,8 @@ const EditProduct = () => {
     const submittingRef = useRef(false)
 
     // Image Management States
+    // { image, thumb } pairs so kept images keep their own thumbnails
     const [retainedImages, setRetainedImages] = useState([])
-    const [deletedImages, setDeletedImages] = useState([])
     const [newImageFiles, setNewImageFiles] = useState([])
     const [newThumbFiles, setNewThumbFiles] = useState([])
     const [newImagePreviews, setNewImagePreviews] = useState([])
@@ -58,7 +59,7 @@ const EditProduct = () => {
             setTagsInput((item.tags || []).join(' '))
             setLocationName(item.locationName || '')
             if (item.lat && item.lng) setLatlng({ lat: item.lat, lng: item.lng })
-            setRetainedImages(item.images || item.imageUrls || (item.imageUrl ? [item.imageUrl] : []))
+            setRetainedImages(pairImages(item.imageUrls || (item.imageUrl ? [item.imageUrl] : []), item.thumbnails))
         }
     }, [item])
 
@@ -94,7 +95,7 @@ const EditProduct = () => {
             const result = await updateListing(id, {
                 title, price, description, whatsapp, wechat, instagram,
                 locationName: finalLocationName, lat: latlng?.lat, lng: latlng?.lng, category, tags, currency,
-                retainedImages, deletedImages,
+                retainedImages,
                 newImages: newImageFiles, newThumbs: newThumbFiles,
             })
             if (result) {
@@ -112,10 +113,8 @@ const EditProduct = () => {
 
 
 
-    const handleRemoveRetained = (url) => {
-        const idx = retainedImages.indexOf(url)
-        setRetainedImages(prev => prev.filter((_, i) => i !== idx))
-        setDeletedImages(prev => [...prev, url])
+    const handleRemoveRetained = (index) => {
+        setRetainedImages(prev => prev.filter((_, i) => i !== index))
     }
 
     const handleRemoveNew = (index) => {
@@ -153,11 +152,11 @@ const EditProduct = () => {
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 mb-6">
                 <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide items-center">
                     {/* Retained Old Images */}
-                    {retainedImages.map((url, idx) => (
+                    {retainedImages.map(({ image, thumb }, idx) => (
                         <div key={`old-${idx}`} className="w-20 h-20 rounded-xl overflow-hidden border border-gray-100 shrink-0 relative group">
-                            <img src={url} alt="" className="w-full h-full object-cover" />
+                            <img src={thumb} alt="" className="w-full h-full object-cover" />
                             <button
-                                onClick={() => handleRemoveRetained(url)}
+                                onClick={() => handleRemoveRetained(idx)}
                                 className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                             >
                                 <X size={12} />
