@@ -33,6 +33,8 @@ export const ProductProvider = ({ children }) => {
     return ['All Locations']
   }, [])
 
+  // Resolves to the next page's cursor (null on the last page), or undefined
+  // when a newer request superseded this one.
   const fetchProducts = useCallback(async (currentUserId = null, params = {}) => {
     const requestId = fetchRequestRef.current + 1
     fetchRequestRef.current = requestId
@@ -41,15 +43,12 @@ export const ProductProvider = ({ children }) => {
       const res = await productService.listProducts(params)
       const items = res.data || []
       const mapped = items.map(product => mapDBProduct(product, currentUserId))
-      const page = params.page || 1
-      const limit = params.limit || 20
-      if (requestId === fetchRequestRef.current) {
-        setListings(prev => page === 1 ? mapped : [...prev, ...mapped.filter(n => !prev.some(o => o.id === n.id))])
-      }
-      return items.length >= limit
+      if (requestId !== fetchRequestRef.current) return undefined
+      setListings(prev => params.cursor ? [...prev, ...mapped.filter(n => !prev.some(o => o.id === n.id))] : mapped)
+      return res.next_cursor || null
     } catch (err) {
       console.error('Error fetching products:', err)
-      return false
+      return requestId === fetchRequestRef.current ? null : undefined
     } finally {
       if (requestId === fetchRequestRef.current) {
         setLoading(prev => ({ ...prev, products: false }))

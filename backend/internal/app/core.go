@@ -192,6 +192,7 @@ func registerCoreRoutes(
 		conv.POST("", convHandler.Create)
 		conv.GET("/unread", convHandler.UnreadCount)
 		conv.GET("/:id", convHandler.GetOne)
+		conv.GET("/:id/messages", convHandler.ListMessages)
 		conv.POST("/:id/messages", convHandler.SendMessage)
 		conv.PUT("/:id/read", convHandler.MarkRead)
 		conv.DELETE("/:id", convHandler.Delete)

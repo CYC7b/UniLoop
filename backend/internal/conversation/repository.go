@@ -8,10 +8,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"uniloop/backend/internal/models"
+	"uniloop/backend/internal/pagination"
 	"uniloop/backend/pkg/cache"
 )
 
-const unreadTTL = 15 * time.Second
+const (
+	unreadTTL           = 15 * time.Second
+	defaultMessagePage  = 50
+	maxMessagePageLimit = 100
+)
 
 type Repository struct {
 	db    *pgxpool.Pool
@@ -50,7 +55,8 @@ func (r *Repository) ListForUser(ctx context.Context, userID uuid.UUID) ([]model
 	return convs, rows.Err()
 }
 
-// GetByID returns a conversation with all messages.
+// GetByID returns a conversation with its most recent page of messages;
+// OlderMessagesCursor is set when earlier messages exist.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Conversation, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT c.id, c.product_id, c.buyer_id, c.seller_id, c.product_title, c.product_image,
@@ -72,25 +78,58 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Convers
 		return nil, err
 	}
 
-	// Fetch messages
-	msgRows, err := r.db.Query(ctx, `
-		SELECT id, conversation_id, sender_id, content, created_at
-		FROM messages WHERE conversation_id=$1 ORDER BY created_at ASC`, id)
+	rows.Close()
+
+	c.Messages, c.OlderMessagesCursor, err = r.ListMessages(ctx, id, nil, defaultMessagePage)
 	if err != nil {
 		return nil, err
 	}
-	defer msgRows.Close()
-	for msgRows.Next() {
-		var m models.Message
-		if err := msgRows.Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.Content, &m.CreatedAt); err != nil {
-			return nil, err
-		}
-		c.Messages = append(c.Messages, m)
-	}
-	if c.Messages == nil {
-		c.Messages = []models.Message{}
-	}
 	return c, nil
+}
+
+// ListMessages returns up to limit messages older than before (newest page when
+// before is nil), in chronological order, plus a cursor for the page before it.
+func (r *Repository) ListMessages(ctx context.Context, convID uuid.UUID, before *pagination.Cursor, limit int) ([]models.Message, string, error) {
+	limit = pagination.ClampLimit(limit, defaultMessagePage, maxMessagePageLimit)
+
+	query := `SELECT id, conversation_id, sender_id, content, created_at
+		FROM messages WHERE conversation_id=$1`
+	args := []any{convID}
+	if before != nil {
+		query += ` AND (created_at, id) < ($2, $3)`
+		args = append(args, before.CreatedAt, before.ID)
+	}
+	// One extra row tells us whether an older page exists.
+	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT %d`, limit+1)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	msgs := []models.Message{}
+	for rows.Next() {
+		var m models.Message
+		if err := rows.Scan(&m.ID, &m.ConversationID, &m.SenderID, &m.Content, &m.CreatedAt); err != nil {
+			return nil, "", err
+		}
+		msgs = append(msgs, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	cursor := ""
+	if len(msgs) > limit {
+		msgs = msgs[:limit]
+		oldest := msgs[limit-1]
+		cursor = pagination.Cursor{CreatedAt: oldest.CreatedAt, ID: oldest.ID}.Encode()
+	}
+	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
+		msgs[i], msgs[j] = msgs[j], msgs[i]
+	}
+	return msgs, cursor, nil
 }
 
 // GetParticipants returns buyer_id and seller_id without loading messages.

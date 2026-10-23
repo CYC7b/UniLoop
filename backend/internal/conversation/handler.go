@@ -3,11 +3,13 @@ package conversation
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
+	"uniloop/backend/internal/pagination"
 )
 
 type Handler struct {
@@ -59,6 +61,32 @@ func (h *Handler) GetOne(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, conv)
+}
+
+func (h *Handler) ListMessages(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	before, err := pagination.Decode(c.Query("before"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+
+	msgs, cursor, err := h.service.ListMessages(c.Request.Context(), userID, id, before, limit)
+	if err != nil {
+		writeServiceError(c, err)
+		return
+	}
+	var next *string
+	if cursor != "" {
+		next = &cursor
+	}
+	c.JSON(http.StatusOK, gin.H{"data": msgs, "next_cursor": next})
 }
 
 func (h *Handler) SendMessage(c *gin.Context) {
