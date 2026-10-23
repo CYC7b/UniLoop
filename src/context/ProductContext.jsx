@@ -5,6 +5,7 @@ import * as productService from '../services/productService'
 import { mapDBProduct } from '../services/productService'
 import { useAuth } from './AuthContext'
 import { useUI } from './UIContext'
+import { buildImagePayload } from '../lib/productImages'
 
 const ProductContext = createContext(null)
 
@@ -144,11 +145,12 @@ export const ProductProvider = ({ children }) => {
     }
   }, [fetchLocations, language, session, showToast])
 
+  // retainedImages are { image, thumb } pairs (see pairImages); the server
+  // releases any image or thumbnail that is no longer referenced.
   const updateListing = useCallback(async (id, {
     newImages = [],
     newThumbs = [],
     retainedImages = [],
-    deletedImages = [],
     ...data
   }) => {
     if (!session?.user) return null
@@ -158,15 +160,14 @@ export const ProductProvider = ({ children }) => {
       if (newImages.length > 0) {
         const uploadRes = await productService.uploadProductImages(newImages, newThumbs)
         newUrls = uploadRes.urls || []
-        newThumbUrls = uploadRes.thumbnails || newUrls
+        newThumbUrls = uploadRes.thumbnails || []
       }
 
-      const finalImages = [...retainedImages, ...newUrls]
-      const finalThumbnails = [...retainedImages, ...newThumbUrls]
+      const { images, thumbnails } = buildImagePayload(retainedImages, newUrls, newThumbUrls)
       const payload = { ...data }
-      if (finalImages.length > 0) {
-        payload.images = finalImages
-        payload.thumbnails = finalThumbnails
+      if (images.length > 0) {
+        payload.images = images
+        payload.thumbnails = thumbnails
       }
 
       await productService.updateProduct(id, payload)
