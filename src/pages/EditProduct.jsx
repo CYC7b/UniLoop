@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useProducts } from '../context/ProductContext.jsx'
@@ -33,6 +33,8 @@ const EditProduct = () => {
     const [locationName, setLocationName] = useState('')
     const [latlng, setLatlng] = useState({ lat: 3.119, lng: 101.654 })
     const [loading, setLoading] = useState(false)
+    // Guards against a double submit uploading the new images twice.
+    const submittingRef = useRef(false)
 
     // Image Management States
     const [retainedImages, setRetainedImages] = useState([])
@@ -71,7 +73,9 @@ const EditProduct = () => {
         e.preventDefault()
         if (!title.trim()) { showToast('warning', t.titleRequired); return }
         if (!String(price).trim()) { showToast('warning', t.priceRequired); return }
+        if (submittingRef.current) return
 
+        submittingRef.current = true
         setLoading(true)
         try {
             let finalLocationName = locationName.trim()
@@ -101,6 +105,7 @@ const EditProduct = () => {
             console.error('Edit error:', err)
             showToast('error', t.publishFailed)
         } finally {
+            submittingRef.current = false
             setLoading(false)
         }
     }

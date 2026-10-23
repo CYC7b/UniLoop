@@ -80,8 +80,11 @@ export function uploadProductImages(images, thumbnails = []) {
   return api.upload('/api/uploads/images', formData)
 }
 
-export function createProduct(data) {
-  return api.post('/api/products', productPayload(data))
+// Retrying with the same idempotencyKey returns the listing the first attempt
+// created instead of publishing a duplicate.
+export function createProduct(data, { idempotencyKey } = {}) {
+  const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined
+  return api.post('/api/products', productPayload(data), { headers })
 }
 
 export function updateProduct(id, data) {
