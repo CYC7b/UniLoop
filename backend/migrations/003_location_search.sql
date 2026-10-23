@@ -1,3 +1,4 @@
+-- +goose Up
 -- Rebuild search_vector to include location_name so full-text search matches venue names
 ALTER TABLE products DROP COLUMN IF EXISTS search_vector;
 ALTER TABLE products ADD COLUMN search_vector TSVECTOR

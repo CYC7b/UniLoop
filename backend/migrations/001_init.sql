@@ -1,5 +1,6 @@
+-- +goose Up
 -- UniLoop — Go backend schema
--- Run: psql $DATABASE_URL -f migrations/001_init.sql
+-- Applied by goose (see internal/db/migrate.go); run manually with `make migrate`.
 
 -- Users (replaces Supabase auth.users)
 CREATE TABLE IF NOT EXISTS users (

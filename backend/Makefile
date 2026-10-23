@@ -13,7 +13,7 @@ build:
 	go build -o bin/server ./cmd/server
 
 migrate:
-	psql "$(DATABASE_URL)" -f migrations/001_init.sql
+	go run ./cmd/migrate
 
 tidy:
 	go mod tidy

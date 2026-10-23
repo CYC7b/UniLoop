@@ -3,31 +3,16 @@ package admin
 import (
 	"context"
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// EnsureSchema runs idempotent ALTER TABLE statements for admin features.
-func EnsureSchema(db *pgxpool.Pool) {
-	ctx := context.Background()
-	stmts := []string{
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE`,
-		`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved BOOLEAN DEFAULT FALSE`,
-		`ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ`,
-		`ALTER TABLE products ADD COLUMN IF NOT EXISTS thumbnails TEXT[] DEFAULT '{}'`,
-		`ALTER TABLE profiles ADD COLUMN IF NOT EXISTS verification_doc_url TEXT DEFAULT ''`,
-	}
-	for _, stmt := range stmts {
-		if _, err := db.Exec(ctx, stmt); err != nil {
-			log.Printf("admin schema: %v", err)
-		}
-	}
-}
-
 // SeedAdmin creates or updates an admin user from env config.
 func SeedAdmin(db *pgxpool.Pool, email, password string) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" {
 		return
 	}
