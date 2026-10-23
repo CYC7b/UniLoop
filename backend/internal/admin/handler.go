@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"uniloop/backend/internal/httperr"
 )
 
 type Handler struct {
@@ -84,7 +85,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	rows, err := h.db.Query(c.Request.Context(), query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	defer rows.Close()
@@ -138,7 +139,7 @@ func (h *Handler) UpdateUserVerification(c *gin.Context) {
 		return
 	}
 	if err := h.repo.UpdateUserVerification(c.Request.Context(), id, req.Status); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -153,7 +154,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.repo.DeleteUser(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -355,7 +356,7 @@ func (h *Handler) ListProducts(c *gin.Context) {
 
 	rows, err := h.db.Query(c.Request.Context(), query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	defer rows.Close()
@@ -413,7 +414,7 @@ func (h *Handler) UpdateProductStatus(c *gin.Context) {
 		return
 	}
 	if err := h.repo.UpdateProductStatus(c.Request.Context(), id, req.Status); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -427,7 +428,7 @@ func (h *Handler) DeleteProduct(c *gin.Context) {
 		return
 	}
 	if err := h.repo.DeleteProduct(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -475,7 +476,7 @@ func (h *Handler) ListReports(c *gin.Context) {
 
 	rows, err := h.db.Query(c.Request.Context(), query, args...)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	defer rows.Close()
@@ -515,7 +516,7 @@ func (h *Handler) ResolveReport(c *gin.Context) {
 		return
 	}
 	if err := h.repo.ResolveReport(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "resolved"})
@@ -529,7 +530,7 @@ func (h *Handler) DeleteReport(c *gin.Context) {
 		return
 	}
 	if err := h.repo.DeleteReport(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})

@@ -24,6 +24,7 @@ type Config struct {
 	AdminEmail     string
 	AdminPassword  string
 	AllowedOrigins []string
+	TrustedProxies []string
 	RabbitMQURL    string
 	RedisURL       string
 }
@@ -48,7 +49,8 @@ func Load() *Config {
 		OTPExpirySecs:  otpExpiry,
 		AdminEmail:     getEnv("ADMIN_EMAIL", ""),
 		AdminPassword:  getEnv("ADMIN_PASSWORD", ""),
-		AllowedOrigins: splitOrigins(getEnv("ALLOWED_ORIGINS", "http://localhost:5173")),
+		AllowedOrigins: splitList(getEnv("ALLOWED_ORIGINS", "http://localhost:5173")),
+		TrustedProxies: splitList(getEnv("TRUSTED_PROXIES", "")),
 		RabbitMQURL:    getEnv("RABBITMQ_URL", ""),
 		RedisURL:       getEnv("REDIS_URL", ""),
 	}
@@ -62,16 +64,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func splitOrigins(s string) []string {
+func splitList(s string) []string {
 	parts := strings.Split(s, ",")
-	var origins []string
+	var items []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
-			origins = append(origins, p)
+			items = append(items, p)
 		}
 	}
-	return origins
+	return items
 }
 
 func mustEnv(key string) string {

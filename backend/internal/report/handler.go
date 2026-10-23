@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"uniloop/backend/internal/httperr"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
 )
@@ -24,7 +25,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	if err := h.service.Create(c.Request.Context(), userID, req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"message": "report submitted"})

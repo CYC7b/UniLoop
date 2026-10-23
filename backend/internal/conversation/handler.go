@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"uniloop/backend/internal/httperr"
 	"uniloop/backend/internal/middleware"
 	"uniloop/backend/internal/models"
 	"uniloop/backend/internal/pagination"
@@ -24,7 +25,7 @@ func (h *Handler) List(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	convs, err := h.service.ListForUser(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	if convs == nil {
@@ -141,7 +142,7 @@ func (h *Handler) UnreadCount(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	count, err := h.service.TotalUnread(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"unread": count})
@@ -156,6 +157,6 @@ func writeServiceError(c *gin.Context, err error) {
 	case errors.Is(err, ErrSelfMessage):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		httperr.Internal(c, err)
 	}
 }

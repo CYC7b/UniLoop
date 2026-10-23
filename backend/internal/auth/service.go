@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/gomail.v2"
@@ -24,6 +25,7 @@ import (
 
 var (
 	ErrInvalidSchoolEmail = errors.New("email must be a .edu.my address")
+	ErrEmailTaken         = errors.New("email already registered")
 	ErrInvalidOTP         = errors.New("invalid or expired code")
 	ErrTooManyOTPAttempts = errors.New("too many attempts, please request a new code")
 )
@@ -64,7 +66,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 		email, string(hash),
 	).Scan(&userID)
 	if err != nil {
-		return nil, fmt.Errorf("email already registered")
+		return nil, userInsertError(err)
 	}
 
 	_, err = tx.Exec(ctx,
@@ -253,6 +255,17 @@ func (s *Service) VerifyOTP(ctx context.Context, userID uuid.UUID, email, code s
 }
 
 // --- helpers ---
+
+// userInsertError maps a failed users INSERT: only a unique violation (the
+// email is taken, possibly by a concurrent registration) is the caller's
+// fault; anything else is a server error.
+func userInsertError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return ErrEmailTaken
+	}
+	return fmt.Errorf("create user: %w", err)
+}
 
 func (s *Service) getProfile(ctx context.Context, userID uuid.UUID) (*models.Profile, error) {
 	p := &models.Profile{}

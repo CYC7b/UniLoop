@@ -236,7 +236,7 @@ func (r *Repository) Create(ctx context.Context, req models.CreateProductRequest
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (owner_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		RETURNING id`,
-		req.Title, req.Price, currency, req.Description, req.Images, thumbs,
+		req.Title, *req.Price, currency, req.Description, req.Images, thumbs,
 		req.Category, tags, req.LocationName, req.Lat, req.Lng, ownerID, contactJSON, idemKey,
 	).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
