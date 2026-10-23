@@ -56,7 +56,10 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	}
 	closers := []func(){pool.Close}
 
-	admin.EnsureSchema(pool)
+	if err := db.Migrate(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	admin.SeedAdmin(pool, cfg.AdminEmail, cfg.AdminPassword)
 
 	var cacheClient *cache.Client

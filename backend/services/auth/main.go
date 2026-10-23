@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -27,6 +28,10 @@ func main() {
 	}
 	defer pool.Close()
 	log.Println("[auth-service] database connected")
+
+	if err := db.Migrate(context.Background(), pool); err != nil {
+		log.Fatalf("%v", err)
+	}
 
 	// Connect to RabbitMQ with indefinite retry
 	pub, err := messaging.NewPublisher(cfg.RabbitMQURL, 0)

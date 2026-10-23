@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"math/big"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/gomail.v2"
@@ -20,7 +22,13 @@ import (
 	"uniloop/backend/pkg/messaging"
 )
 
-var ErrInvalidSchoolEmail = errors.New("email must be a .edu.my address")
+var (
+	ErrInvalidSchoolEmail = errors.New("email must be a .edu.my address")
+	ErrInvalidOTP         = errors.New("invalid or expired code")
+	ErrTooManyOTPAttempts = errors.New("too many attempts, please request a new code")
+)
+
+const maxOTPAttempts = 5
 
 type Service struct {
 	db        *pgxpool.Pool
@@ -34,6 +42,7 @@ func NewService(db *pgxpool.Pool, cfg *config.Config, pub messaging.EventPublish
 }
 
 func (s *Service) Register(ctx context.Context, email, password, name string) (*models.AuthResponse, error) {
+	email = normalizeEmail(email)
 	if !isSchoolEmail(email) {
 		return nil, ErrInvalidSchoolEmail
 	}
@@ -94,6 +103,7 @@ func (s *Service) Register(ctx context.Context, email, password, name string) (*
 }
 
 func (s *Service) Login(ctx context.Context, email, password string) (*models.AuthResponse, error) {
+	email = normalizeEmail(email)
 	var userID uuid.UUID
 	var hash string
 	var isAdmin bool
@@ -131,6 +141,7 @@ func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*models.Pro
 }
 
 func (s *Service) SendOTP(ctx context.Context, userID uuid.UUID, email string) error {
+	email = normalizeEmail(email)
 	if !isSchoolEmail(email) {
 		return ErrInvalidSchoolEmail
 	}
@@ -146,10 +157,13 @@ func (s *Service) SendOTP(ctx context.Context, userID uuid.UUID, email string) e
 
 	expiresAt := time.Now().Add(time.Duration(s.cfg.OTPExpirySecs) * time.Second)
 
-	_, _ = s.db.Exec(ctx, `UPDATE otp_codes SET used = TRUE WHERE user_id = $1 AND used = FALSE`, userID)
-
-	_, err = s.db.Exec(ctx,
-		`INSERT INTO otp_codes (user_id, email, code, expires_at) VALUES ($1, $2, $3, $4)`,
+	// One active code per user (uq_otp_codes_active_user): a resend replaces the
+	// previous code atomically, so concurrent sends can never leave two valid codes.
+	_, err = s.db.Exec(ctx, `
+		INSERT INTO otp_codes (user_id, email, code, expires_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id) WHERE NOT used DO UPDATE SET
+			email = EXCLUDED.email, code = EXCLUDED.code, expires_at = EXCLUDED.expires_at,
+			attempts = 0, created_at = NOW()`,
 		userID, email, code, expiresAt,
 	)
 	if err != nil {
@@ -175,31 +189,67 @@ func (s *Service) SendOTP(ctx context.Context, userID uuid.UUID, email string) e
 }
 
 func (s *Service) VerifyOTP(ctx context.Context, userID uuid.UUID, email, code string) error {
-	var otpID uuid.UUID
-	err := s.db.QueryRow(ctx,
-		`SELECT id FROM otp_codes
-		 WHERE user_id = $1 AND email = $2 AND code = $3
-		   AND used = FALSE AND expires_at > NOW()
-		 ORDER BY created_at DESC LIMIT 1`,
-		userID, email, code,
-	).Scan(&otpID)
+	email = normalizeEmail(email)
+
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("invalid or expired code")
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// FOR UPDATE serializes concurrent attempts on the user's active code, so the
+	// attempts counter is exact and a code can be consumed only once.
+	var (
+		otpID       uuid.UUID
+		storedEmail string
+		storedCode  string
+		attempts    int
+		live        bool
+	)
+	err = tx.QueryRow(ctx,
+		`SELECT id, email, code, attempts, expires_at > NOW()
+		 FROM otp_codes WHERE user_id = $1 AND NOT used
+		 FOR UPDATE`,
+		userID,
+	).Scan(&otpID, &storedEmail, &storedCode, &attempts, &live)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalidOTP
+	}
+	if err != nil {
+		return fmt.Errorf("load otp: %w", err)
+	}
+	if !live {
+		return ErrInvalidOTP
+	}
+	if attempts >= maxOTPAttempts {
+		return ErrTooManyOTPAttempts
 	}
 
-	_, err = s.db.Exec(ctx, `UPDATE otp_codes SET used = TRUE WHERE id = $1`, otpID)
-	if err != nil {
-		return err
+	if storedEmail != email || subtle.ConstantTimeCompare([]byte(storedCode), []byte(code)) != 1 {
+		if _, err := tx.Exec(ctx, `UPDATE otp_codes SET attempts = attempts + 1 WHERE id = $1`, otpID); err != nil {
+			return fmt.Errorf("record otp attempt: %w", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+		return ErrInvalidOTP
 	}
 
-	_, err = s.db.Exec(ctx,
+	if _, err := tx.Exec(ctx, `UPDATE otp_codes SET used = TRUE WHERE id = $1`, otpID); err != nil {
+		return fmt.Errorf("consume otp: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
 		`UPDATE profiles SET verification_status = 'verified', updated_at = NOW() WHERE id = $1`,
 		userID,
-	)
-	if err == nil {
-		s.cache.Delete(ctx, cache.ProfileKey(userID))
+	); err != nil {
+		return fmt.Errorf("verify profile: %w", err)
 	}
-	return err
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	s.cache.Delete(ctx, cache.ProfileKey(userID))
+	return nil
 }
 
 // --- helpers ---
@@ -237,8 +287,13 @@ func generateOTPCode() (string, error) {
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
+// normalizeEmail matches the users_email_normalized CHECK constraint.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
 func isSchoolEmail(email string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(email))
+	normalized := normalizeEmail(email)
 	at := strings.LastIndex(normalized, "@")
 	if at < 0 || at == len(normalized)-1 {
 		return false

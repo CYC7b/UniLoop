@@ -85,7 +85,14 @@ func (h *Handler) VerifyOTP(c *gin.Context) {
 		return
 	}
 	if err := h.svc.VerifyOTP(c.Request.Context(), userID, req.Email, req.Code); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		switch {
+		case errors.Is(err, ErrInvalidOTP):
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		case errors.Is(err, ErrTooManyOTPAttempts):
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "verification failed"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "verified"})
