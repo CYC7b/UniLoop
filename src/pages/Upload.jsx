@@ -1,10 +1,11 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useProducts } from '../context/ProductContext.jsx'
 import { useUI } from '../context/UIContext.jsx'
 import LocationPicker from '../components/LocationPicker.jsx'
 import { compressImage, generateThumbnail } from '../lib/imageUtils.js'
 import { LoadingButton } from '../components/LoadingSpinner.jsx'
+import { newIdempotencyKey } from '../lib/idempotency.js'
 
 const Upload = () => {
   const { addListing, locations } = useProducts()
@@ -15,6 +16,11 @@ const Upload = () => {
   const [thumbs, setThumbs] = useState([])
   const [previews, setPreviews] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  // A ref closes the double-click window before `submitting` re-renders.
+  const submittingRef = useRef(false)
+  // One key per form: retries after a lost response return the same listing.
+  const idempotencyKeyRef = useRef(null)
+  if (idempotencyKeyRef.current === null) idempotencyKeyRef.current = newIdempotencyKey()
   const [title, setTitle] = useState('')
   const [price, setPrice] = useState('')
   const [currency, setCurrency] = useState('MYR')
@@ -64,6 +70,7 @@ const Upload = () => {
 
   const submit = async (e) => {
     e.preventDefault()
+    if (submittingRef.current) return
     if (images.length === 0) { showToast('warning', t.minImages); return }
     if (!title.trim()) { showToast('warning', t.titleRequired); return }
     if (!String(price).trim()) { showToast('warning', t.priceRequired); return }
@@ -78,11 +85,13 @@ const Upload = () => {
 
     const tags = tagsInput.split(' ').map(s => s.trim()).filter(Boolean)
 
+    submittingRef.current = true
     try {
       setSubmitting(true)
       const id = await addListing({
         title, price, images, thumbnails: thumbs, description, whatsapp, wechat, instagram,
-        locationName: finalLocationName, lat: latlng?.lat, lng: latlng?.lng, category, tags, currency
+        locationName: finalLocationName, lat: latlng?.lat, lng: latlng?.lng, category, tags, currency,
+        idempotencyKey: idempotencyKeyRef.current
       })
       if (id) {
         navigate(`/product/${id}`)
@@ -91,6 +100,7 @@ const Upload = () => {
       console.error('Unexpected error in Upload submit:', err)
       showToast('error', t.publishFailed)
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

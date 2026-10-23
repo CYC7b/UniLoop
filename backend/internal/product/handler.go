@@ -2,8 +2,11 @@ package product
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -129,9 +132,27 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := h.repo.Create(c.Request.Context(), req, userID)
+	var idemKey *uuid.UUID
+	if raw := c.GetHeader("Idempotency-Key"); raw != "" {
+		key, err := uuid.Parse(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Idempotency-Key must be a UUID"})
+			return
+		}
+		idemKey = &key
+	}
+	p, replayed, err := h.repo.Create(c.Request.Context(), req, userID, idemKey)
+	if errors.Is(err, ErrUnknownImages) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if replayed {
+		c.Header("Idempotent-Replayed", "true")
+		c.JSON(http.StatusOK, p)
 		return
 	}
 	c.JSON(http.StatusCreated, p)
@@ -154,7 +175,11 @@ func (h *Handler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	p, err := h.repo.Update(c.Request.Context(), id, req)
+	p, err := h.repo.Update(c.Request.Context(), id, userID, req)
+	if errors.Is(err, ErrUnknownImages) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -200,7 +225,11 @@ func (h *Handler) Locations(c *gin.Context) {
 
 // UploadImages handles multipart image uploads, returns public URLs.
 // Accepts "images" (product images) and optional "thumbnails" (thumb versions).
+// All files are validated before any is written; if saving or recording any
+// of them fails, the files already written are removed. Saved files are
+// registered as unclaimed uploads until a listing claims them.
 func (h *Handler) UploadImages(c *gin.Context) {
+	userID := middleware.GetUserID(c)
 	// Limit total body: 9 images + 9 thumbnails
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 18*maxUploadSize)
 
@@ -214,58 +243,75 @@ func (h *Handler) UploadImages(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "no images provided"})
 		return
 	}
-	if len(files) > 9 {
+	thumbFiles := form.File["thumbnails"]
+	if len(files) > 9 || len(thumbFiles) > 9 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "max 9 images"})
 		return
 	}
 
-	thumbFiles := form.File["thumbnails"]
+	type pendingFile struct {
+		fh  *multipart.FileHeader
+		dir string
+		ext string
+	}
+	var pending []pendingFile
+	for _, group := range []struct {
+		files []*multipart.FileHeader
+		dir   string
+	}{{files, "products"}, {thumbFiles, "thumbnails"}} {
+		for _, fh := range group.files {
+			ext, err := validateImage(fh)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			pending = append(pending, pendingFile{fh: fh, dir: group.dir, ext: ext})
+		}
+	}
 
-	if err := h.storage.EnsureDirs(c.Request.Context(), "products", "thumbnails"); err != nil {
+	saved := make([]string, 0, len(pending))
+	// Use a fresh context: a cancelled request is a common reason to roll back.
+	rollback := func() {
+		for _, url := range saved {
+			if err := h.storage.Delete(context.Background(), url); err != nil {
+				log.Printf("upload rollback: %v", err)
+			}
+		}
+	}
+	for _, p := range pending {
+		url, err := h.storage.Save(c.Request.Context(), p.fh, p.dir, uuid.New().String()+p.ext)
+		if err != nil {
+			rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
+			return
+		}
+		saved = append(saved, url)
+	}
+	if err := h.repo.RecordUploads(c.Request.Context(), userID, saved); err != nil {
+		rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "storage error"})
 		return
 	}
 
-	saveFile := func(fh *multipart.FileHeader, dir string) (string, error) {
-		ext := strings.ToLower(filepath.Ext(fh.Filename))
-		if !allowedImageExts[ext] {
-			return "", fmt.Errorf("allowed formats: jpg, jpeg, png, webp, gif")
-		}
-		if fh.Size > maxUploadSize {
-			return "", fmt.Errorf("each file must be under 10MB")
-		}
-		ok, contentType, err := isAllowedImageContent(fh)
-		if err != nil {
-			return "", fmt.Errorf("invalid image file")
-		}
-		if !ok {
-			return "", fmt.Errorf("image content is not supported: %s", contentType)
-		}
-		name := uuid.New().String() + ext
-		return h.storage.Save(c.Request.Context(), fh, dir, name)
-	}
+	c.JSON(http.StatusOK, gin.H{"urls": saved[:len(files)], "thumbnails": saved[len(files):]})
+}
 
-	var urls []string
-	for _, fh := range files {
-		url, err := saveFile(fh, "products")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		urls = append(urls, url)
+func validateImage(fh *multipart.FileHeader) (string, error) {
+	ext := strings.ToLower(filepath.Ext(fh.Filename))
+	if !allowedImageExts[ext] {
+		return "", fmt.Errorf("allowed formats: jpg, jpeg, png, webp, gif")
 	}
-
-	var thumbUrls []string
-	for _, fh := range thumbFiles {
-		url, err := saveFile(fh, "thumbnails")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		thumbUrls = append(thumbUrls, url)
+	if fh.Size > maxUploadSize {
+		return "", fmt.Errorf("each file must be under 10MB")
 	}
-
-	c.JSON(http.StatusOK, gin.H{"urls": urls, "thumbnails": thumbUrls})
+	ok, contentType, err := isAllowedImageContent(fh)
+	if err != nil {
+		return "", fmt.Errorf("invalid image file")
+	}
+	if !ok {
+		return "", fmt.Errorf("image content is not supported: %s", contentType)
+	}
+	return ext, nil
 }
 
 func isAllowedImageContent(file *multipart.FileHeader) (bool, string, error) {

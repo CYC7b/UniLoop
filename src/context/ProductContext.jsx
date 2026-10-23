@@ -107,7 +107,7 @@ export const ProductProvider = ({ children }) => {
     }
   }, [session?.user?.id])
 
-  const addListing = useCallback(async ({ images, thumbnails = [], ...data }) => {
+  const addListing = useCallback(async ({ images, thumbnails = [], idempotencyKey, ...data }) => {
     if (!session?.user) {
       showToast('error', language === 'zh' ? '请先登录' : 'Please login first')
       return null
@@ -118,7 +118,7 @@ export const ProductProvider = ({ children }) => {
         ...data,
         images: uploadRes.urls || [],
         thumbnails: uploadRes.thumbnails || []
-      })
+      }, { idempotencyKey })
       fetchProducts(session.user.id)
       fetchLocations()
       return product.id

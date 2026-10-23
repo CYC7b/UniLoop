@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -85,6 +86,9 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	}
 
 	productRepo := product.NewRepository(pool, cacheClient)
+	janitorCtx, stopJanitor := context.WithCancel(context.Background())
+	go productRepo.RunUploadJanitor(janitorCtx, store, time.Hour, 24*time.Hour)
+	closers = append(closers, stopJanitor)
 	profileRepo := profile.NewRepository(pool, cacheClient)
 	convRepo := conversation.NewRepository(pool, cacheClient)
 	hub := ws.NewHub()
@@ -125,7 +129,7 @@ func newBaseRouter(cfg *config.Config) *gin.Engine {
 
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = cfg.AllowedOrigins
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
+	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization", "Idempotency-Key"}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	r.Use(cors.New(corsConfig))
 	r.Use(middleware.RateLimit(20, 40))

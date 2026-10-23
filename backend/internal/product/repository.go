@@ -3,11 +3,13 @@ package product
 import (
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"uniloop/backend/internal/models"
 	"uniloop/backend/internal/pagination"
@@ -199,7 +201,11 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*models.Product
 	return scanProduct(rows)
 }
 
-func (r *Repository) Create(ctx context.Context, req models.CreateProductRequest, ownerID uuid.UUID) (*models.Product, error) {
+// Create inserts a listing and claims its uploaded images in one transaction,
+// so a failure leaves no listing and the images stay unclaimed for the janitor.
+// With an idempotency key, a repeated request returns the listing created by
+// the first one and replayed=true instead of inserting a duplicate.
+func (r *Repository) Create(ctx context.Context, req models.CreateProductRequest, ownerID uuid.UUID, idemKey *uuid.UUID) (p *models.Product, replayed bool, err error) {
 	currency := req.Currency
 	if currency == "" {
 		currency = "MYR"
@@ -214,26 +220,57 @@ func (r *Repository) Create(ctx context.Context, req models.CreateProductRequest
 		thumbs = []string{}
 	}
 
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// A concurrent request with the same key blocks on the unique index until
+	// the first one commits or rolls back, then gets DO NOTHING or proceeds.
 	var id uuid.UUID
-	err := r.db.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO products
 			(title, price, currency, description, images, thumbnails, category, tags,
-			 location_name, lat, lng, owner_id, contact_info)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			 location_name, lat, lng, owner_id, contact_info, idempotency_key)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		ON CONFLICT (owner_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		RETURNING id`,
 		req.Title, req.Price, currency, req.Description, req.Images, thumbs,
-		req.Category, tags, req.LocationName, req.Lat, req.Lng, ownerID, contactJSON,
+		req.Category, tags, req.LocationName, req.Lat, req.Lng, ownerID, contactJSON, idemKey,
 	).Scan(&id)
-	if err != nil {
-		return nil, fmt.Errorf("create product: %w", err)
+	if errors.Is(err, pgx.ErrNoRows) {
+		_ = tx.Rollback(ctx)
+		if err := r.db.QueryRow(ctx,
+			`SELECT id FROM products WHERE owner_id = $1 AND idempotency_key = $2`, ownerID, idemKey,
+		).Scan(&id); err != nil {
+			return nil, false, fmt.Errorf("load idempotent product: %w", err)
+		}
+		p, err := r.GetByID(ctx, id)
+		return p, true, err
 	}
+	if err != nil {
+		return nil, false, fmt.Errorf("create product: %w", err)
+	}
+
+	if err := claimUploads(ctx, tx, ownerID, id, imageURLs(req.Images, thumbs)); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("commit: %w", err)
+	}
+
 	// Invalidate product list and locations caches
 	r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
 	r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
-	return r.GetByID(ctx, id)
+	p, err = r.GetByID(ctx, id)
+	return p, false, err
 }
 
-func (r *Repository) Update(ctx context.Context, id uuid.UUID, req models.UpdateProductRequest) (*models.Product, error) {
+// Update applies the provided fields. When the image set changes, newly added
+// images are claimed and dropped ones released for the janitor, atomically
+// with the row update.
+func (r *Repository) Update(ctx context.Context, id, ownerID uuid.UUID, req models.UpdateProductRequest) (*models.Product, error) {
 	sets := []string{"updated_at=NOW()"}
 	args := []any{}
 	n := 1
@@ -285,12 +322,45 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, req models.Update
 		return r.GetByID(ctx, id)
 	}
 
-	args = append(args, id)
-	_, err := r.db.Exec(ctx,
-		fmt.Sprintf("UPDATE products SET %s WHERE id=$%d", strings.Join(sets, ","), n),
-		args...)
+	tx, err := r.db.Begin(ctx)
 	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if req.Images != nil || req.Thumbnails != nil {
+		// Lock the row so concurrent edits compute image diffs one at a time.
+		var curImages, curThumbs []string
+		if err := tx.QueryRow(ctx,
+			`SELECT images, thumbnails FROM products WHERE id = $1 FOR UPDATE`, id,
+		).Scan(&curImages, &curThumbs); err != nil {
+			return nil, fmt.Errorf("load product images: %w", err)
+		}
+		nextImages, nextThumbs := curImages, curThumbs
+		if req.Images != nil {
+			nextImages = req.Images
+		}
+		if req.Thumbnails != nil {
+			nextThumbs = req.Thumbnails
+		}
+		before := imageURLs(curImages, curThumbs)
+		after := imageURLs(nextImages, nextThumbs)
+		if err := claimUploads(ctx, tx, ownerID, id, without(after, before)); err != nil {
+			return nil, err
+		}
+		if err := releaseUploads(ctx, tx, id, without(before, after)); err != nil {
+			return nil, err
+		}
+	}
+
+	args = append(args, id)
+	if _, err := tx.Exec(ctx,
+		fmt.Sprintf("UPDATE products SET %s WHERE id=$%d", strings.Join(sets, ","), n),
+		args...); err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
 	}
 	r.cache.DeleteByPattern(ctx, cache.ProductListPattern)
 	r.cache.DeleteByPattern(ctx, cache.LocationsPattern)
