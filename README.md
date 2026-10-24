@@ -150,10 +150,37 @@ Build and start the full stack manually:
 docker compose --env-file backend/.env -f backend/docker-compose.yml up -d --build
 ```
 
+## HTTPS Deployment
+
+`backend/nginx.conf` serves plain HTTP on port 8080 for local development. Logins send the password in the request body, so any public deployment must terminate TLS. `backend/nginx.tls.conf.example` is a starting point: it redirects port 80 to HTTPS, serves 443 with TLS 1.2/1.3, and sends an HSTS header.
+
+1. Copy it to `backend/nginx.tls.conf` and replace `uniloop.example.com` with your domain.
+2. Put the certificate and key at `backend/certs/fullchain.pem` and `backend/certs/privkey.pem`.
+3. Point `BASE_URL`, `ALLOWED_ORIGINS`, and the frontend `VITE_API_URL` at the `https://` origin. The chat client switches to `wss://` automatically.
+4. Mount the config and certificates with a Compose override, for example `backend/docker-compose.tls.yml`. Compose merges volumes by container path, so this replaces the HTTP config:
+
+```yaml
+services:
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.tls.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+```
+
+```bash
+docker compose --env-file backend/.env -f backend/docker-compose.yml -f backend/docker-compose.tls.yml up -d
+```
+
+The example starts with a one-year HSTS `max-age`. If you are switching an existing site to HTTPS, try a short value first, and only add `includeSubDomains` once every subdomain serves HTTPS.
+
 ## Security Notes
 
 - Do not commit `.env` files or uploaded media.
 - Use a strong `JWT_SECRET` in non-local environments.
+- Serve the app over HTTPS in any non-local environment (see HTTPS Deployment).
 - Keep production SMTP credentials out of Git.
 - WebSocket authentication uses the `Sec-WebSocket-Protocol` header instead of URL query tokens.
 - Avatar uploads are validated by extension and file header.

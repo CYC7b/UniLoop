@@ -1,0 +1,99 @@
+# HTTPS 网关示例：部署到公网时用它替换 nginx.conf（挂载方式见 README 的 HTTPS 一节）。
+# 本地开发仍使用 nginx.conf（HTTP :8080）。
+#
+# 需要准备：
+#   - 把 uniloop.example.com 换成你的域名
+#   - 证书放到 ./certs/fullchain.pem 和 ./certs/privkey.pem（例如由 certbot / acme.sh 签发）
+#   - BASE_URL、ALLOWED_ORIGINS、前端 VITE_API_URL 都改成 https:// 地址
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Docker 内置 DNS，启动时不立即解析上游，避免依赖顺序问题
+    resolver 127.0.0.11 valid=10s;
+
+    # 不在响应头和错误页里暴露 nginx 版本
+    server_tokens off;
+
+    # 后端限流只认 TRUSTED_PROXIES 发来的 X-Real-IP，所以这里必须用 $remote_addr 覆盖它；
+    # X-Forwarded-For 也一并覆盖，不把客户端自带的值传下去。
+    # 若 nginx 前面还有一层负载均衡，先用 real_ip 模块（set_real_ip_from）还原客户端 IP。
+
+    # HTTP 只做跳转，不处理任何业务请求，避免密码等敏感数据走明文
+    server {
+        listen 80;
+        server_name uniloop.example.com;
+
+        # 证书签发 / 续期用的 ACME HTTP-01 校验（不用 certbot webroot 可删掉）
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location / {
+            return 301 https://$host$request_uri;
+        }
+    }
+
+    server {
+        listen 443 ssl;
+        http2 on;
+        server_name uniloop.example.com;
+
+        ssl_certificate     /etc/nginx/certs/fullchain.pem;
+        ssl_certificate_key /etc/nginx/certs/privkey.pem;
+
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers off;
+        ssl_session_cache shared:SSL:10m;
+        ssl_session_timeout 1d;
+        ssl_session_tickets off;
+
+        # HSTS：浏览器在 max-age 内只会用 HTTPS 访问本域名。
+        # 首次上线建议先用较短的 max-age（如 300）确认 HTTPS 正常，再调到一年；
+        # 确认所有子域名都支持 HTTPS 后才加 includeSubDomains / preload。
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+        # Auth 微服务
+        location /api/auth/ {
+            set $auth http://auth-service:8081;
+            proxy_pass $auth;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 30s;
+            proxy_connect_timeout 5s;
+        }
+
+        # WebSocket（浏览器端走 wss://）— 必须在 / 之前匹配
+        location /ws {
+            set $core http://core-service:8082;
+            proxy_pass $core;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 3600s;
+        }
+
+        # 所有其他请求 → Core 服务
+        location / {
+            set $core http://core-service:8082;
+            proxy_pass $core;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+            proxy_connect_timeout 5s;
+            client_max_body_size 200m;
+        }
+    }
+}
