@@ -46,6 +46,10 @@ func NewMonolith(cfg *config.Config) (*Server, error) {
 
 func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	ctx := context.Background()
+	router, err := newBaseRouter(cfg)
+	if err != nil {
+		return nil, err
+	}
 	store := storage.NewLocal(cfg.UploadDir)
 	if err := store.EnsureDirs(ctx, "products", "avatars", "docs", "thumbnails"); err != nil {
 		return nil, fmt.Errorf("create upload dir: %w", err)
@@ -110,7 +114,6 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	wsHandler := ws.NewWSHandler(hub, cfg.JWTSecret, cfg.AllowedOrigins)
 	adminHandler := admin.NewHandler(admin.NewRepository(pool, cacheClient), cfg.UploadDir)
 
-	router := newBaseRouter(cfg)
 	uploadRoot := store.Root()
 	router.Static("/uploads/products", filepath.Join(uploadRoot, "products"))
 	router.Static("/uploads/avatars", filepath.Join(uploadRoot, "avatars"))
@@ -123,8 +126,13 @@ func newServer(cfg *config.Config, includeAuth bool) (*Server, error) {
 	return &Server{Router: router, closers: closers}, nil
 }
 
-func newBaseRouter(cfg *config.Config) *gin.Engine {
+func newBaseRouter(cfg *config.Config) (*gin.Engine, error) {
 	r := gin.New()
+	// Rate limiting keys on c.ClientIP(); only believe forwarding headers from
+	// configured proxies, or anyone could dodge the limit with X-Forwarded-For.
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("trusted proxies: %w", err)
+	}
 	r.Use(gin.Logger(), gin.Recovery())
 
 	corsConfig := cors.DefaultConfig()
@@ -133,7 +141,7 @@ func newBaseRouter(cfg *config.Config) *gin.Engine {
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
 	r.Use(cors.New(corsConfig))
 	r.Use(middleware.RateLimit(20, 40))
-	return r
+	return r, nil
 }
 
 func registerAuthRoutes(r *gin.Engine, cfg *config.Config, authHandler *auth.Handler) {

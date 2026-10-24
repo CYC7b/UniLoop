@@ -63,6 +63,7 @@ services:
       SMTP_FROM: ${SMTP_FROM}
       OTP_EXPIRY_SECS: ${OTP_EXPIRY_SECS}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       PORT: "8081"
     depends_on:
       db:
@@ -93,6 +94,7 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       RABBITMQ_URL: ${RABBITMQ_URL}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
       PORT: "8082"
     volumes:
       - uploads:/app/uploads

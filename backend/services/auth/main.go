@@ -56,6 +56,11 @@ func main() {
 	authHandler := auth.NewHandler(authSvc)
 
 	r := gin.New()
+	// Rate limiting keys on c.ClientIP(); only believe forwarding headers from
+	// configured proxies, or anyone could dodge the limit with X-Forwarded-For.
+	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		log.Fatalf("trusted proxies: %v", err)
+	}
 	r.Use(gin.Logger(), gin.Recovery())
 
 	corsConfig := cors.DefaultConfig()

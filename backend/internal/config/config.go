@@ -24,6 +24,10 @@ type Config struct {
 	AdminEmail     string
 	AdminPassword  string
 	AllowedOrigins []string
+	// TrustedProxies lists the proxy IPs/CIDRs whose X-Forwarded-For / X-Real-IP
+	// headers are believed when resolving the client IP. Empty means trust none,
+	// so the client IP is always the TCP peer and cannot be spoofed by a header.
+	TrustedProxies []string
 	RabbitMQURL    string
 	RedisURL       string
 }
@@ -48,7 +52,8 @@ func Load() *Config {
 		OTPExpirySecs:  otpExpiry,
 		AdminEmail:     getEnv("ADMIN_EMAIL", ""),
 		AdminPassword:  getEnv("ADMIN_PASSWORD", ""),
-		AllowedOrigins: splitOrigins(getEnv("ALLOWED_ORIGINS", "http://localhost:5173")),
+		AllowedOrigins: splitList(getEnv("ALLOWED_ORIGINS", "http://localhost:5173")),
+		TrustedProxies: splitList(getEnv("TRUSTED_PROXIES", "")),
 		RabbitMQURL:    getEnv("RABBITMQ_URL", ""),
 		RedisURL:       getEnv("REDIS_URL", ""),
 	}
@@ -62,16 +67,16 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func splitOrigins(s string) []string {
+func splitList(s string) []string {
 	parts := strings.Split(s, ",")
-	var origins []string
+	var items []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p != "" {
-			origins = append(origins, p)
+			items = append(items, p)
 		}
 	}
-	return origins
+	return items
 }
 
 func mustEnv(key string) string {
